@@ -3,28 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EPUB 快速转 TXT 工具</title>
+    <title>EPUB 转 TXT 工具 - 加强版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        :root { --primary: #0071e3; --bg: #f5f5f7; --text: #1d1d1f; }
+        :root { --primary: #0071e3; --bg: #f5f5f7; --text: #1d1d1f; --border: #d2d2d7; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 90%; max-width: 500px; text-align: center; }
         h2 { margin-top: 0; font-weight: 600; color: #333; }
         p { color: #86868b; font-size: 14px; margin-bottom: 1.5rem; }
-        .drop-area { border: 2px dashed #d2d2d7; border-radius: 12px; padding: 40px 20px; transition: all 0.3s; cursor: pointer; position: relative; }
+        
+        /* 文件名输入区域 */
+        .name-setting { margin-bottom: 15px; text-align: left; display: none; }
+        .name-setting label { font-size: 12px; color: #86868b; margin-left: 5px; }
+        .name-setting input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 14px; margin-top: 5px; }
+
+        .drop-area { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; transition: all 0.3s; cursor: pointer; position: relative; }
         .drop-area:hover { border-color: var(--primary); background: #f0f7ff; }
         input[type="file"] { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
-        .status { margin-top: 20px; font-size: 14px; min-height: 20px; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; display: none; margin: 20px auto 0; transition: transform 0.1s; }
-        .btn:active { transform: scale(0.98); }
-        #log { margin-top: 15px; text-align: left; font-size: 12px; color: #666; max-height: 150px; overflow-y: auto; background: #fafafa; border-radius: 6px; padding: 10px; display: none; }
+        
+        .status { margin-top: 20px; font-size: 14px; min-height: 20px; color: #0071e3; font-weight: 500; }
+        .btn { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; display: none; margin: 10px auto 0; width: 100%; font-size: 16px; }
+        .btn:hover { opacity: 0.9; }
+        
+        #log { margin-top: 15px; text-align: left; font-size: 11px; color: #888; max-height: 100px; overflow-y: auto; background: #f9f9f9; border-radius: 6px; padding: 8px; display: none; border: 1px solid #eee; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h2>EPUB 转 TXT</h2>
-    <p>提取电子书中的文字内容并合并为纯文本</p>
+    <p>高效提取文字并合并为纯文本</p>
     
     <div class="drop-area" id="dropArea">
         <span id="promptText">点击或拖拽 EPUB 文件至此处</span>
@@ -32,8 +40,14 @@
     </div>
 
     <div class="status" id="status">等待上传...</div>
+
+    <div class="name-setting" id="nameSetting">
+        <label>导出文件名 (.txt)</label>
+        <input type="text" id="targetFileName" placeholder="请输入文件名">
+    </div>
+
+    <button class="btn" id="dlBtn">立即导出 TXT</button>
     <div id="log"></div>
-    <button class="btn" id="dlBtn">下载 TXT 文件</button>
 </div>
 
 <script>
@@ -41,46 +55,41 @@
     const status = document.getElementById('status');
     const dlBtn = document.getElementById('dlBtn');
     const log = document.getElementById('log');
+    const nameSetting = document.getElementById('nameSetting');
+    const targetFileNameInput = document.getElementById('targetFileName');
+    
     let finalTxt = "";
-    let fileName = "ebook.txt";
 
     epubInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         reset();
-        fileName = file.name.replace(/\.epub$/i, '.txt');
-        status.innerText = "正在读取文件...";
+        // 预填文件名（去掉原后缀）
+        targetFileNameInput.value = file.name.replace(/\.epub$/i, '');
+        status.innerText = "正在深度解析电子书...";
         
         try {
             const zip = await JSZip.loadAsync(file);
-            addLog("ZIP 包解压成功");
+            addLog("ZIP 解压成功");
 
-            // 1. 寻找 content.opf 获取正确的章节阅读顺序
             let opfPath = "";
-            zip.forEach((path) => {
-                if (path.endsWith('.opf')) opfPath = path;
-            });
+            zip.forEach((path) => { if (path.endsWith('.opf')) opfPath = path; });
 
             let chapterFiles = [];
             if (opfPath) {
-                addLog(`解析索引文件: ${opfPath}`);
                 const opfContent = await zip.file(opfPath).async("string");
                 chapterFiles = parseOpfOrder(opfContent, opfPath);
             }
 
-            // 如果没找到 OPF 顺序，则回退到文件名排序
             if (chapterFiles.length === 0) {
-                addLog("未找到阅读顺序，将按文件名排序");
-                zip.forEach((path, entry) => {
-                    if (path.endsWith('.xhtml') || path.endsWith('.html')) {
-                        chapterFiles.push(path);
-                    }
+                addLog("未找到标准索引，尝试自动排序");
+                zip.forEach((path) => {
+                    if (path.endsWith('.xhtml') || path.endsWith('.html')) chapterFiles.push(path);
                 });
                 chapterFiles.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
             }
 
-            // 2. 提取文本
             let resultText = "";
             const parser = new DOMParser();
 
@@ -91,54 +100,44 @@
                 const html = await fileEntry.async("string");
                 const doc = parser.parseFromString(html, 'text/html');
                 
-                // 简单的清理：将段落和换行处理好
-                const paragraphs = doc.querySelectorAll('p, div, h1, h2, h3, h4');
-                if (paragraphs.length > 0) {
-                    paragraphs.forEach(p => {
-                        const line = p.innerText.trim();
-                        if (line) resultText += line + "\n\n";
-                    });
-                } else {
-                    resultText += (doc.body.innerText || doc.body.textContent).trim() + "\n\n";
+                // 优化文字提取逻辑：保留段落感
+                const bodyText = Array.from(doc.querySelectorAll('p, h1, h2, h3, div'))
+                                      .map(el => el.innerText.trim())
+                                      .filter(t => t.length > 0)
+                                      .join('\n\n');
+
+                if (bodyText) {
+                    resultText += bodyText + "\n\n--- 章节分割线 ---\n\n";
                 }
-                addLog(`已处理: ${path.split('/').pop()}`);
+                addLog(`解析完成: ${path.split('/').pop()}`);
             }
 
             finalTxt = resultText;
-            status.innerText = "转换完成！";
+            status.innerText = "转换成功！请确认文件名后下载。";
+            nameSetting.style.display = "block";
             dlBtn.style.display = "block";
 
         } catch (err) {
-            status.innerText = "转换出错，请检查文件是否损坏";
-            addLog("错误: " + err.message);
-            console.error(err);
+            status.innerText = "转换出错，请检查文件";
+            addLog("错误详情: " + err.message);
         }
     });
 
-    // 解析 OPF 文件中的 spine 节点
     function parseOpfOrder(xmlString, opfPath) {
         const parser = new DOMParser();
         const xml = parser.parseFromString(xmlString, "text/xml");
-        const manifest = xml.getElementsByTagName("item");
-        const spine = xml.getElementsByTagName("itemref");
+        const items = Array.from(xml.getElementsByTagName("item"));
+        const spine = Array.from(xml.getElementsByTagName("itemref"));
         const baseDir = opfPath.substring(0, opfPath.lastIndexOf('/') + 1);
 
         const idMap = {};
-        for (let item of manifest) {
-            idMap[item.getAttribute("id")] = item.getAttribute("href");
-        }
+        items.forEach(item => idMap[item.getAttribute("id")] = item.getAttribute("href"));
 
-        const orderedFiles = [];
-        for (let ref of spine) {
-            const id = ref.getAttribute("idref");
-            if (idMap[id]) {
-                // 处理路径拼接
-                let fullPath = baseDir + idMap[id];
-                // 简单的路径格式化（去掉 ../ 等）
-                orderedFiles.push(fullPath);
-            }
-        }
-        return orderedFiles;
+        return spine.map(ref => {
+            const href = idMap[ref.getAttribute("idref")];
+            // 简单处理相对路径
+            return href ? (baseDir + href).replace(/[^\/]+\/\.\.\//g, "") : null;
+        }).filter(p => p !== null);
     }
 
     function addLog(msg) {
@@ -153,13 +152,17 @@
         finalTxt = "";
         log.innerHTML = "";
         dlBtn.style.display = "none";
+        nameSetting.style.display = "none";
     }
 
     dlBtn.onclick = () => {
+        let name = targetFileNameInput.value.trim() || "ebook";
+        if (!name.toLowerCase().endsWith(".txt")) name += ".txt";
+        
         const blob = new Blob([finalTxt], { type: "text/plain;charset=utf-8" });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = fileName;
+        a.download = name;
         a.click();
     };
 </script>
