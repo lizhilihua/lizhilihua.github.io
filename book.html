@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EPUB 编辑器 - 增强版</title>
+    <title>EPUB 编辑器 - 纯净版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root { --primary: #0071e3; --bg: #f5f5f7; --border: #d2d2d7; --secondary: #636366; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #1d1d1f; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #1d1d1f; }
         
         .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
         @media (min-width: 992px) { .container { display: grid; grid-template-columns: 300px 1fr 350px; height: 90vh; } }
@@ -19,7 +19,6 @@
         label { display: block; font-size: 11px; color: #86868b; margin-bottom: 4px; }
         input[type="text"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 14px; }
         
-        /* 目录项样式改进 */
         .toc-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--border); border-radius: 8px; overflow-y: auto; flex-grow: 1; }
         .toc-item { 
             display: flex; align-items: center; padding: 8px; 
@@ -31,7 +30,6 @@
         .toc-item input { flex: 1; border: 1px solid transparent; border-radius: 4px; padding: 6px; font-size: 14px; }
         .toc-item input:focus { border-color: #ddd; background: #fff; outline: none; }
 
-        /* 操作按钮 */
         .action-btns { display: flex; gap: 4px; }
         .btn-view { 
             background: #e5e5ea; color: #007aff; border: none; border-radius: 6px; 
@@ -41,7 +39,6 @@
         .btn-view:hover { background: #d1d1d6; }
         .btn-del { color: #ff3b30; border: none; background: none; cursor: pointer; font-size: 18px; padding: 0 5px; }
 
-        /* 预览区 */
         .preview-content { font-size: 14px; line-height: 1.6; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #eee; white-space: pre-wrap; flex-grow: 1; overflow-y: auto; }
 
         .main-btn { width: 100%; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
@@ -67,7 +64,7 @@
     <div class="panel" id="previewPanel">
         <h3>3. 章节预览</h3>
         <div id="previewTitle" style="font-weight:bold; margin-bottom:8px; color:var(--primary)">未选中内容</div>
-        <div id="previewBody" class="preview-content">点击章节旁的“详情”按钮查看...</div>
+        <div id="previewBody" class="preview-content">内容已自动剔除重复标题...</div>
     </div>
 </div>
 
@@ -85,27 +82,56 @@
 
     function parseChapters(content) {
         const cleaned = content.replace(/\r\n/g, '\n').trim();
+        // 匹配标题行
         const chapterRegex = /^\s*(第[一二三四五六七八九十百千万\d\s]+[章节回卷]|Chapter\s+\d+|序言|前言|后记|尾声|引子).*/gm;
         
         let chapters = [];
-        let match, lastIndex = 0;
+        let match;
+        let lastIndex = 0; // 上一个章节正文的起始点
+        let tempChapters = [];
 
+        // 第一次遍历：找出所有标题的位置
         while ((match = chapterRegex.exec(cleaned)) !== null) {
-            if (chapters.length === 0 && match.index > 0) {
-                chapters.push({ title: "前言", text: cleaned.substring(0, match.index) });
-            }
-            if (chapters.length > 0) chapters[chapters.length - 1].text = cleaned.substring(lastIndex, match.index);
-            chapters.push({ title: match[0].trim().substring(0, 50), text: "" });
-            lastIndex = match.index;
+            tempChapters.push({
+                title: match[0].trim(),
+                index: match.index,
+                length: match[0].length
+            });
         }
 
-        if (chapters.length === 0) {
-            const chunkSize = 1000;
+        if (tempChapters.length === 0) {
+            // 如果没匹配到标题，按字数粗略分段
+            const chunkSize = 2000;
             for (let i = 0; i < cleaned.length; i += chunkSize) {
-                chapters.push({ title: `第 ${Math.floor(i/chunkSize) + 1} 章`, text: cleaned.substring(i, i + chunkSize) });
+                chapters.push({ 
+                    title: `第 ${Math.floor(i/chunkSize) + 1} 部分`, 
+                    text: cleaned.substring(i, i + chunkSize) 
+                });
             }
         } else {
-            chapters[chapters.length - 1].text = cleaned.substring(lastIndex);
+            // 处理“前言”：如果第一个标题不在开头，把开头到第一个标题前的内容提取出来
+            if (tempChapters[0].index > 0) {
+                chapters.push({
+                    title: "前言",
+                    text: cleaned.substring(0, tempChapters[0].index).trim()
+                });
+            }
+
+            // 循环组合标题与正文
+            for (let i = 0; i < tempChapters.length; i++) {
+                const current = tempChapters[i];
+                const next = tempChapters[i + 1];
+                
+                // 正文起始点 = 当前标题的结束位置
+                const textStart = current.index + current.length;
+                // 正文结束点 = 下一个标题的开始位置 (如果是最后一章，则是全文结束)
+                const textEnd = next ? next.index : cleaned.length;
+                
+                chapters.push({
+                    title: current.title,
+                    text: cleaned.substring(textStart, textEnd).trim()
+                });
+            }
         }
 
         currentChapters = chapters;
@@ -121,7 +147,7 @@
             li.className = `toc-item ${i === activeIndex ? 'active' : ''}`;
             li.innerHTML = `
                 <span class="index">${i + 1}</span>
-                <input type="text" value="${ch.title}" oninput="currentChapters[${i}].title = this.value">
+                <input type="text" value="${ch.title}" oninput="currentChapters[${activeIndex === i ? i : i}].title = this.value">
                 <div class="action-btns">
                     <button class="btn-view" onclick="showPreview(${i})">详情</button>
                     <button class="btn-del" onclick="removeChapter(${i})">✕</button>
@@ -136,9 +162,9 @@
         renderTOC();
         const ch = currentChapters[index];
         document.getElementById('previewTitle').innerText = ch.title;
-        document.getElementById('previewBody').innerText = ch.text.slice(0, 1500) + (ch.text.length > 1500 ? "\n\n(此处仅预览前1500字...)" : "");
+        // 预览时显示前 1500 字
+        document.getElementById('previewBody').innerText = ch.text.slice(0, 1500) + (ch.text.length > 1500 ? "\n\n(此处仅预览部分内容...)" : "");
         
-        // 手机端自动滚动到预览区
         if(window.innerWidth < 992) {
             document.getElementById('previewPanel').scrollIntoView({ behavior: 'smooth' });
         }
@@ -152,29 +178,69 @@
         }
     }
 
-    // 打包逻辑保持不变...
     async function generateEpub() {
         const title = document.getElementById('title').value || "未命名";
         const author = document.getElementById('author').value || "佚名";
         const zip = new JSZip();
+        
         zip.file('mimetype', 'application/epub+zip', { compression: "STORE" });
         zip.folder('META-INF').file('container.xml', `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+        
         const oebps = zip.folder('OEBPS');
         let manifest = [], spine = [], nav = [];
+
         currentChapters.forEach((ch, i) => {
             const fileName = `ch_${i}.xhtml`;
-            const html = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${ch.title}</title><style>p{text-indent:2em;line-height:1.7;margin:1em 0;}</style></head><body><h2>${ch.title}</h2>${ch.text.split('\n').filter(l => l.trim()).map(l => `<p>${l.trim()}</p>`).join('')}</body></html>`;
+            // 构造章节 HTML，仅在 <h2> 处显示标题，正文已不再包含标题行
+            const html = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>${ch.title}</title>
+    <style>
+        body { padding: 5%; }
+        h2 { text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        p { text-indent: 2em; line-height: 1.7; margin: 1em 0; text-align: justify; }
+    </style>
+</head>
+<body>
+    <h2>${ch.title}</h2>
+    ${ch.text.split('\n').filter(l => l.trim()).map(l => `<p>${l.trim()}</p>`).join('')}
+</body>
+</html>`;
             oebps.file(fileName, html);
             manifest.push(`<item id="i${i}" href="${fileName}" media-type="application/xhtml+xml"/>`);
             spine.push(`<itemref idref="i${i}"/>`);
             nav.push(`<li><a href="${fileName}">${ch.title}</a></li>`);
         });
-        const opf = `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="id" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">id${Date.now()}</dc:identifier><dc:title>${title}</dc:title><dc:creator>${author}</dc:creator><dc:language>zh</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${manifest.join('')}</manifest><spine><itemref idref="nav"/>${spine.join('')}</spine></package>`;
+
+        const opf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="id" version="3.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:identifier id="id">id${Date.now()}</dc:identifier>
+        <dc:title>${title}</dc:title>
+        <dc:creator>${author}</dc:creator>
+        <dc:language>zh</dc:language>
+        <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}</meta>
+    </metadata>
+    <manifest>
+        <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+        ${manifest.join('')}
+    </manifest>
+    <spine>
+        <itemref idref="nav"/>
+        ${spine.join('')}
+    </spine>
+</package>`;
+
         oebps.file('content.opf', opf);
         const navXhtml = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目录</title></head><body><nav epub:type="toc"><h1>目录</h1><ol>${nav.join('')}</ol></nav></body></html>`;
         oebps.file('nav.xhtml', navXhtml);
+
         const blob = await zip.generateAsync({ type: "blob" });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${title}.epub`; a.click();
+        const a = document.createElement('a'); 
+        a.href = URL.createObjectURL(blob); 
+        a.download = `${title}.epub`; 
+        a.click();
     }
 </script>
 </body>
