@@ -2,119 +2,237 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>字母发音学习板</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奇妙字母乐园 - 挑战版</title>
     <style>
-        :root {
-            --primary-color: #ff8c00;
-            --bg-color: #f0f4f8;
-        }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: #f0f7ff;
+            margin: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin: 0;
-            padding: 20px;
+            min-height: 100vh;
+            transition: background-color 0.4s ease;
+            touch-action: manipulation;
+            user-select: none;
         }
-        h1 { color: #333; margin-bottom: 30px; }
-        
+
+        /* 顶部控制面板 */
+        .controls {
+            background: white;
+            width: 100%;
+            padding: 15px 0;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 30px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.3s;
+            color: white;
+        }
+
+        #mode-btn { background: #ff6b6b; }
+        #repeat-btn { background: #4ecdc4; display: none; }
+        button:active { transform: scale(0.95); }
+
+        /* 字母网格 */
         .alphabet-grid {
             display: grid;
-            /* 响应式网格：在手机上自动换行 */
-            grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
             gap: 15px;
+            width: 95%;
             max-width: 800px;
-            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
         .letter-card {
             background: white;
-            aspect-ratio: 1 / 1;
+            aspect-ratio: 1/1;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            border-radius: 20px;
             font-size: 2rem;
             font-weight: bold;
-            color: var(--primary-color);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
             cursor: pointer;
-            transition: all 0.2s ease;
-            user-select: none;
-            border: 3px solid transparent;
+            border-bottom: 6px solid rgba(0,0,0,0.1);
+            position: relative;
         }
 
-        /* 鼠标悬停及点击效果 */
-        .letter-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        .word-label {
+            font-size: 0.75rem;
+            font-weight: normal;
+            color: #888;
+            margin-top: 5px;
         }
 
-        .letter-card:active {
-            transform: scale(0.9);
-            background-color: var(--primary-color);
-            color: white;
-            border-color: #ffae42;
+        /* 果冻抖动动画 */
+        @keyframes jelly {
+            0% { transform: scale(1, 1); }
+            30% { transform: scale(1.25, 0.75); }
+            40% { transform: scale(0.75, 1.25); }
+            50% { transform: scale(1.15, 0.85); }
+            100% { transform: scale(1, 1); }
+        }
+        .jelly-active { animation: jelly 0.6s both; }
+
+        /* 弹窗反馈 */
+        #toast {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            border-radius: 50px;
+            font-size: 2.5rem;
+            font-weight: bold;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 2000;
+            background: white;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
 
-        .hint {
-            margin-top: 20px;
-            color: #666;
-            font-size: 0.9rem;
+        .pop-up { animation: popUp 1.2s ease forwards; }
+        @keyframes popUp {
+            0% { opacity: 0; transform: translate(-50%, -30%) scale(0.5); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+            80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -70%) scale(0.8); }
         }
     </style>
 </head>
 <body>
 
-    <h1>ABC 发音板</h1>
-    
-    <div class="alphabet-grid" id="grid">
-        </div>
+    <div class="controls">
+        <button id="mode-btn">开始挑战模式</button>
+        <button id="repeat-btn">🔊 再听一遍</button>
+    </div>
 
-    <p class="hint">提示：点击字母即可聆听标准英语读音</p>
+    <div class="alphabet-grid" id="grid"></div>
+    <div id="toast"></div>
 
     <script>
-        const grid = document.getElementById('grid');
-        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        const wordMap = {
+            'A':'Apple','B':'Bear','C':'Cat','D':'Dog','E':'Elephant','F':'Fish','G':'Grape','H':'Hat','I':'Ice cream','J':'Juice','K':'Kite','L':'Lion','M':'Monkey','N':'Nose','O':'Orange','P':'Panda','Q':'Queen','R':'Rabbit','S':'Sun','T':'Tiger','U':'Umbrella','V':'Van','W':'Watch','X':'Xylophone','Y':'Yo-Yo','Z':'Zebra'
+        };
 
-        // 初始化语音合成引擎
+        const grid = document.getElementById('grid');
+        const modeBtn = document.getElementById('mode-btn');
+        const repeatBtn = document.getElementById('repeat-btn');
+        const toast = document.getElementById('toast');
         const synth = window.speechSynthesis;
 
-        // 生成 26 个字母卡片
-        alphabet.forEach(letter => {
+        let isChallengeMode = false;
+        let targetLetter = '';
+        const defaultBg = "#f0f7ff";
+
+        // 初始化网格
+        Object.keys(wordMap).forEach((letter, i) => {
             const card = document.createElement('div');
             card.className = 'letter-card';
-            card.textContent = letter;
+            const hue = (i * 137.5) % 360;
+            card.style.color = `hsl(${hue}, 75%, 45%)`;
             
-            // 点击事件
-            card.onclick = () => {
-                speak(letter);
-            };
-            
+            card.innerHTML = `
+                ${letter}
+                <span class="word-label">${wordMap[letter]}</span>
+            `;
+
+            card.onclick = () => handleAction(letter, card, hue);
             grid.appendChild(card);
         });
 
-        function speak(text) {
-            // 如果正在朗读，先取消
-            synth.cancel();
+        function handleAction(letter, card, hue) {
+            // 动画反馈
+            card.classList.remove('jelly-active');
+            void card.offsetWidth;
+            card.classList.add('jelly-active');
 
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US'; // 设置为美式英语
-            utterance.rate = 0.9;     // 语速稍微放慢一点点，更清晰
-            utterance.pitch = 1.0;    // 音调
-
-            // 执行朗读
-            synth.speak(utterance);
+            if (!isChallengeMode) {
+                // 普通模式
+                document.body.style.backgroundColor = `hsla(${hue}, 40%, 93%, 1)`;
+                speak(`${letter}. ${letter} is for ${wordMap[letter]}`);
+                showToast(`${letter} for ${wordMap[letter]}`, `hsl(${hue}, 80%, 40%)`);
+            } else {
+                // 挑战模式逻辑
+                if (letter === targetLetter) {
+                    document.body.style.backgroundColor = "#d1fae5"; // 绿色成功背景
+                    showToast("🎉 正确!", "#10b981");
+                    speak("Excellent! That is " + letter);
+                    setTimeout(nextQuestion, 1600);
+                } else {
+                    document.body.style.backgroundColor = "#fee2e2"; // 红色失败背景
+                    showToast("❌ 再试一次", "#ef4444");
+                    speak("That's " + letter + ". Try again!");
+                }
+            }
         }
 
-        // 针对某些移动端浏览器需要预热语音引擎
-        document.body.addEventListener('touchstart', () => {
-            if (synth.speaking) return;
-            // 这是一个静默触发，解决 iOS 等自动播放限制
-            const silent = new SpeechSynthesisUtterance('');
-            synth.speak(silent);
+        modeBtn.onclick = () => {
+            isChallengeMode = !isChallengeMode;
+            if (isChallengeMode) {
+                modeBtn.innerText = "退出挑战";
+                modeBtn.style.background = "#636e72";
+                repeatBtn.style.display = "block";
+                nextQuestion();
+            } else {
+                isChallengeMode = false;
+                modeBtn.innerText = "开始挑战模式";
+                modeBtn.style.background = "#ff6b6b";
+                repeatBtn.style.display = "none";
+                document.body.style.backgroundColor = defaultBg;
+                synth.cancel();
+            }
+        };
+
+        repeatBtn.onclick = () => {
+            if (targetLetter) speak("Where is the letter " + targetLetter + "?");
+        };
+
+        function nextQuestion() {
+            if (!isChallengeMode) return;
+            const keys = Object.keys(wordMap);
+            targetLetter = keys[Math.floor(Math.random() * keys.length)];
+            document.body.style.backgroundColor = defaultBg;
+            speak("Where is the letter " + targetLetter + "?");
+        }
+
+        function speak(text) {
+            synth.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'en-US';
+            u.rate = 0.85;
+            u.pitch = 1.1;
+            synth.speak(u);
+        }
+
+        function showToast(text, color) {
+            toast.textContent = text;
+            toast.style.color = color;
+            toast.classList.remove('pop-up');
+            void toast.offsetWidth;
+            toast.classList.add('pop-up');
+        }
+
+        // 解锁移动端音频限制
+        document.addEventListener('touchstart', () => {
+            synth.speak(new SpeechSynthesisUtterance(''));
         }, { once: true });
     </script>
 </body>
