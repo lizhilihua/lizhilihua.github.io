@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>收纳大作战 - 圆形发散版</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --box-color: #4facfe; }
+        body {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; margin: 0; background: #e0e5ec;
+            font-family: sans-serif; overflow: hidden; touch-action: none;
+        }
+        #box-container { position: relative; width: 180px; height: 180px; z-index: 1; }
+        #box {
+            width: 100%; height: 100%; background: #e0e5ec; border-radius: 40px;
+            box-shadow: inset 8px 8px 16px #bebebe, inset -8px -8px 16px #ffffff;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--box-color); font-weight: bold; font-size: 14px;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 2px solid rgba(255,255,255,0.5); pointer-events: none;
+        }
+        #box.active { box-shadow: inset 12px 12px 24px #bebebe, inset -12px -12px 24px #ffffff; transform: scale(0.95); }
+        
+        .ball {
+            width: 45px; height: 45px; border-radius: 50%;
+            cursor: grab; touch-action: none; position: absolute; z-index: 10;
+            background: radial-gradient(circle at 30% 30%, var(--bg), #00000044);
+            box-shadow: 2px 4px 8px rgba(0,0,0,0.2);
+            transition: transform 0.1s linear, box-shadow 0.2s ease;
+        }
+        .ball.dragging { cursor: grabbing; box-shadow: 10px 20px 30px rgba(0,0,0,0.3); transform: scale(1.2) !important; z-index: 100; }
+        
+        @keyframes shrink-in { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0); opacity: 0; } }
+        .dropping { animation: shrink-in 0.3s forwards ease-in; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div id="box-container">
+        <div id="box">收纳盒</div>
+    </div>
+
+    <script>
+        const box = document.getElementById('box');
+        const colors = ['#FF4B2B', '#00d2ff', '#92FE9D', '#FDC830', '#A40606', '#8E2DE2', '#FF9FF3', '#22a6b3', '#be2edd', '#f0932b', '#eb4d4b', '#6ab04c'];
+        const totalBalls = 30; 
+        let collected = 0;
+        const placedBalls = [];
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const msg = new SpeechSynthesisUtterance(text);
+                msg.lang = 'zh-CN'; msg.pitch = 1.6;
+                window.speechSynthesis.speak(msg);
+            }
+        }
+
+        // 初始化发散生成
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        const ballSize = 45;
+
+        for (let i = 0; i < totalBalls; i++) {
+            const ball = document.createElement('div');
+            ball.className = 'ball';
+            ball.style.setProperty('--bg', colors[i % colors.length]);
+            
+            let finalX, finalY, attempts = 0;
+
+            // 极坐标算法：随机角度 + 随机半径
+            while (attempts < 300) {
+                const angle = Math.random() * Math.PI * 2;
+                // 半径在盒子边缘(120px)到屏幕边缘之间随机
+                const radius = 130 + Math.random() * (Math.min(window.innerWidth, window.innerHeight) / 2);
+                
+                // 极坐标转直角坐标
+                const x = centerX + Math.cos(angle) * radius - ballSize/2;
+                const y = centerY + Math.sin(angle) * radius - ballSize/2;
+
+                // 边界检查：不超出屏幕
+                if (x > 0 && x < window.innerWidth - ballSize && y > 0 && y < window.innerHeight - ballSize) {
+                    const overlapping = placedBalls.some(pos => Math.hypot(x - pos.x, y - pos.y) < ballSize + 5);
+                    if (!overlapping) {
+                        finalX = x;
+                        finalY = y;
+                        break;
+                    }
+                }
+                attempts++;
+            }
+
+            // 如果找到位置则放置，否则放弃该球（防止死循环）
+            if (finalX !== undefined) {
+                placedBalls.push({x: finalX, y: finalY});
+                ball.style.left = finalX + 'px';
+                ball.style.top = finalY + 'px';
+                ball.onpointerdown = startDrag;
+                document.body.appendChild(ball);
+            }
+        }
+
+        function startDrag(e) {
+            const ball = e.target;
+            const startX = e.clientX, startY = e.clientY;
+            const initialLeft = parseFloat(ball.style.left), initialTop = parseFloat(ball.style.top);
+            ball.classList.add('dragging');
+            ball.setPointerCapture(e.pointerId);
+
+            const moveHandler = (me) => {
+                ball.style.left = (initialLeft + me.clientX - startX) + 'px';
+                ball.style.top = (initialTop + me.clientY - startY) + 'px';
+                isOver(me.clientX, me.clientY) ? box.classList.add('active') : box.classList.remove('active');
+            };
+
+            const upHandler = (ue) => {
+                ball.classList.remove('dragging');
+                box.classList.remove('active');
+                if (isOver(ue.clientX, ue.clientY)) {
+                    ball.onpointerdown = null;
+                    ball.classList.add('dropping');
+                    setTimeout(() => { ball.remove(); handleSuccess(); }, 300);
+                } else {
+                    ball.style.transition = "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+                    ball.style.left = initialLeft + 'px'; ball.style.top = initialTop + 'px';
+                    setTimeout(() => ball.style.transition = "", 300);
+                }
+                window.removeEventListener('pointermove', moveHandler);
+                window.removeEventListener('pointerup', upHandler);
+            };
+            window.addEventListener('pointermove', moveHandler);
+            window.addEventListener('pointerup', upHandler);
+        }
+
+        function isOver(x, y) {
+            const r = box.getBoundingClientRect();
+            return x > r.left && x < r.right && y > r.top && y < r.bottom;
+        }
+
+        function handleSuccess() {
+            collected++;
+            if (collected % 4 === 0 || collected === placedBalls.length) {
+                speak(["真不错！", "好球！", "继续加油！", "太丝滑了！"][Math.floor(Math.random() * 4)]);
+            }
+            if (collected === placedBalls.length) setTimeout(finalCelebration, 300);
+        }
+
+        function finalCelebration() {
+            speak("太出色了！全部搞定！");
+            const end = Date.now() + 3000;
+
+            (function frame() {
+                confetti({ particleCount: 5, angle: 45, spread: 60, origin: { x: 0, y: 0 }, startVelocity: 60 });
+                confetti({ particleCount: 5, angle: 135, spread: 60, origin: { x: 1, y: 0 }, startVelocity: 60 });
+                confetti({ particleCount: 5, angle: 315, spread: 60, origin: { x: 0, y: 1 }, startVelocity: 60 });
+                confetti({ particleCount: 5, angle: 225, spread: 60, origin: { x: 1, y: 1 }, startVelocity: 60 });
+
+                if (Date.now() < end) requestAnimationFrame(frame);
+                else confetti({ particleCount: 300, spread: 150, origin: { y: 0.6 } });
+            }());
+        }
+
+        document.addEventListener('pointerdown', () => {}, {once: true});
+    </script>
+</body>
+</html>
