@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EPUB 编辑器 - 增强版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root { --primary: #0071e3; --bg: #f5f5f7; --border: #d2d2d7; --secondary: #636366; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #1d1d1f; }
+        
+        .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        @media (min-width: 992px) { .container { display: grid; grid-template-columns: 300px 1fr 350px; height: 90vh; } }
+        
+        .panel { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; }
+        h3 { margin: 0 0 12px 0; font-size: 13px; color: var(--secondary); text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+
+        .group { margin-bottom: 10px; }
+        label { display: block; font-size: 11px; color: #86868b; margin-bottom: 4px; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        
+        /* 目录项样式改进 */
+        .toc-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--border); border-radius: 8px; overflow-y: auto; flex-grow: 1; }
+        .toc-item { 
+            display: flex; align-items: center; padding: 8px; 
+            border-bottom: 1px solid var(--border); gap: 8px;
+            transition: background 0.2s;
+        }
+        .toc-item.active { background: #f0f7ff; }
+        .toc-item .index { color: #999; font-size: 11px; min-width: 22px; text-align: center; }
+        .toc-item input { flex: 1; border: 1px solid transparent; border-radius: 4px; padding: 6px; font-size: 14px; }
+        .toc-item input:focus { border-color: #ddd; background: #fff; outline: none; }
+
+        /* 操作按钮 */
+        .action-btns { display: flex; gap: 4px; }
+        .btn-view { 
+            background: #e5e5ea; color: #007aff; border: none; border-radius: 6px; 
+            padding: 6px 10px; font-size: 12px; cursor: pointer; font-weight: 500;
+            white-space: nowrap;
+        }
+        .btn-view:hover { background: #d1d1d6; }
+        .btn-del { color: #ff3b30; border: none; background: none; cursor: pointer; font-size: 18px; padding: 0 5px; }
+
+        /* 预览区 */
+        .preview-content { font-size: 14px; line-height: 1.6; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #eee; white-space: pre-wrap; flex-grow: 1; overflow-y: auto; }
+
+        .main-btn { width: 100%; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+        .main-btn:disabled { background: #aeaeb2; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="panel">
+        <h3>1. 基本配置</h3>
+        <div class="group"><label>书名</label><input type="text" id="title" placeholder="自动获取文件名"></div>
+        <div class="group"><label>作者</label><input type="text" id="author" value="佚名"></div>
+        <div class="group"><label>上传 TXT</label><input type="file" id="fileInput" accept=".txt"></div>
+        <button class="main-btn" id="dlBtn" onclick="generateEpub()" disabled>下载 EPUB</button>
+    </div>
+
+    <div class="panel">
+        <h3>2. 目录管理</h3>
+        <ul id="tocList" class="toc-list"></ul>
+    </div>
+
+    <div class="panel" id="previewPanel">
+        <h3>3. 章节预览</h3>
+        <div id="previewTitle" style="font-weight:bold; margin-bottom:8px; color:var(--primary)">未选中内容</div>
+        <div id="previewBody" class="preview-content">点击章节旁的“详情”按钮查看...</div>
+    </div>
+</div>
+
+<script>
+    let currentChapters = [];
+    let activeIndex = -1;
+
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+        if (!e.target.files.length) return;
+        const file = e.target.files[0];
+        document.getElementById('title').value = file.name.replace('.txt', '');
+        const content = await file.text();
+        parseChapters(content);
+    });
+
+    function parseChapters(content) {
+        const cleaned = content.replace(/\r\n/g, '\n').trim();
+        const chapterRegex = /^\s*(第[一二三四五六七八九十百千万\d\s]+[章节回卷]|Chapter\s+\d+|序言|前言|后记|尾声|引子).*/gm;
+        
+        let chapters = [];
+        let match, lastIndex = 0;
+
+        while ((match = chapterRegex.exec(cleaned)) !== null) {
+            if (chapters.length === 0 && match.index > 0) {
+                chapters.push({ title: "前言", text: cleaned.substring(0, match.index) });
+            }
+            if (chapters.length > 0) chapters[chapters.length - 1].text = cleaned.substring(lastIndex, match.index);
+            chapters.push({ title: match[0].trim().substring(0, 50), text: "" });
+            lastIndex = match.index;
+        }
+
+        if (chapters.length === 0) {
+            const chunkSize = 1000;
+            for (let i = 0; i < cleaned.length; i += chunkSize) {
+                chapters.push({ title: `第 ${Math.floor(i/chunkSize) + 1} 章`, text: cleaned.substring(i, i + chunkSize) });
+            }
+        } else {
+            chapters[chapters.length - 1].text = cleaned.substring(lastIndex);
+        }
+
+        currentChapters = chapters;
+        renderTOC();
+        document.getElementById('dlBtn').disabled = false;
+    }
+
+    function renderTOC() {
+        const list = document.getElementById('tocList');
+        list.innerHTML = '';
+        currentChapters.forEach((ch, i) => {
+            const li = document.createElement('li');
+            li.className = `toc-item ${i === activeIndex ? 'active' : ''}`;
+            li.innerHTML = `
+                <span class="index">${i + 1}</span>
+                <input type="text" value="${ch.title}" oninput="currentChapters[${i}].title = this.value">
+                <div class="action-btns">
+                    <button class="btn-view" onclick="showPreview(${i})">详情</button>
+                    <button class="btn-del" onclick="removeChapter(${i})">✕</button>
+                </div>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    function showPreview(index) {
+        activeIndex = index;
+        renderTOC();
+        const ch = currentChapters[index];
+        document.getElementById('previewTitle').innerText = ch.title;
+        document.getElementById('previewBody').innerText = ch.text.slice(0, 1500) + (ch.text.length > 1500 ? "\n\n(此处仅预览前1500字...)" : "");
+        
+        // 手机端自动滚动到预览区
+        if(window.innerWidth < 992) {
+            document.getElementById('previewPanel').scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    function removeChapter(index) {
+        if(confirm(`确定删除章节：${currentChapters[index].title} 吗？`)) {
+            currentChapters.splice(index, 1);
+            if (activeIndex === index) activeIndex = -1;
+            renderTOC();
+        }
+    }
+
+    // 打包逻辑保持不变...
+    async function generateEpub() {
+        const title = document.getElementById('title').value || "未命名";
+        const author = document.getElementById('author').value || "佚名";
+        const zip = new JSZip();
+        zip.file('mimetype', 'application/epub+zip', { compression: "STORE" });
+        zip.folder('META-INF').file('container.xml', `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+        const oebps = zip.folder('OEBPS');
+        let manifest = [], spine = [], nav = [];
+        currentChapters.forEach((ch, i) => {
+            const fileName = `ch_${i}.xhtml`;
+            const html = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${ch.title}</title><style>p{text-indent:2em;line-height:1.7;margin:1em 0;}</style></head><body><h2>${ch.title}</h2>${ch.text.split('\n').filter(l => l.trim()).map(l => `<p>${l.trim()}</p>`).join('')}</body></html>`;
+            oebps.file(fileName, html);
+            manifest.push(`<item id="i${i}" href="${fileName}" media-type="application/xhtml+xml"/>`);
+            spine.push(`<itemref idref="i${i}"/>`);
+            nav.push(`<li><a href="${fileName}">${ch.title}</a></li>`);
+        });
+        const opf = `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="id" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">id${Date.now()}</dc:identifier><dc:title>${title}</dc:title><dc:creator>${author}</dc:creator><dc:language>zh</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${manifest.join('')}</manifest><spine><itemref idref="nav"/>${spine.join('')}</spine></package>`;
+        oebps.file('content.opf', opf);
+        const navXhtml = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目录</title></head><body><nav epub:type="toc"><h1>目录</h1><ol>${nav.join('')}</ol></nav></body></html>`;
+        oebps.file('nav.xhtml', navXhtml);
+        const blob = await zip.generateAsync({ type: "blob" });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${title}.epub`; a.click();
+    }
+</script>
+</body>
+</html>
