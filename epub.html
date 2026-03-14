@@ -3,51 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EPUB 转 TXT 工具 - 加强版</title>
+    <title>EPUB 解析器 - 目录增强版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root { --primary: #0071e3; --bg: #f5f5f7; --text: #1d1d1f; --border: #d2d2d7; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 90%; max-width: 500px; text-align: center; }
-        h2 { margin-top: 0; font-weight: 600; color: #333; }
-        p { color: #86868b; font-size: 14px; margin-bottom: 1.5rem; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; }
         
-        /* 文件名输入区域 */
-        .name-setting { margin-bottom: 15px; text-align: left; display: none; }
-        .name-setting label { font-size: 12px; color: #86868b; margin-left: 5px; }
-        .name-setting input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 14px; margin-top: 5px; }
-
-        .drop-area { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; transition: all 0.3s; cursor: pointer; position: relative; }
+        .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 600px; text-align: center; margin-bottom: 20px; }
+        h2 { margin-top: 0; font-weight: 600; }
+        
+        /* 拖拽区 */
+        .drop-area { border: 2px dashed var(--border); border-radius: 12px; padding: 30px; transition: all 0.3s; cursor: pointer; position: relative; margin-bottom: 15px; }
         .drop-area:hover { border-color: var(--primary); background: #f0f7ff; }
         input[type="file"] { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
+
+        /* 目录列表 */
+        #chapterList { width: 100%; max-width: 600px; background: white; border-radius: 15px; overflow: hidden; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .chapter-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #eee; transition: background 0.2s; }
+        .chapter-item:hover { background: #f9f9f9; }
+        .chapter-title { font-size: 14px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; text-align: left; }
+        .view-btn { background: #e8f2ff; color: var(--primary); border: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-left: 10px; }
         
-        .status { margin-top: 20px; font-size: 14px; min-height: 20px; color: #0071e3; font-weight: 500; }
-        .btn { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; display: none; margin: 10px auto 0; width: 100%; font-size: 16px; }
-        .btn:hover { opacity: 0.9; }
-        
-        #log { margin-top: 15px; text-align: left; font-size: 11px; color: #888; max-height: 100px; overflow-y: auto; background: #f9f9f9; border-radius: 6px; padding: 8px; display: none; border: 1px solid #eee; }
+        /* 预览模态框 */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; }
+        .modal-content { background: white; width: 85%; max-width: 700px; height: 80vh; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { flex: 1; padding: 25px; overflow-y: auto; text-align: left; line-height: 1.8; white-space: pre-wrap; font-size: 16px; color: #333; }
+        .close-modal { font-size: 24px; cursor: pointer; color: #888; border: none; background: none; }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; flex: 1; display: none; }
+        #log { margin-top: 10px; font-size: 11px; color: #888; text-align: left; width: 100%; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>EPUB 转 TXT</h2>
-    <p>高效提取文字并合并为纯文本</p>
-    
+    <h2>EPUB 阅读与提取</h2>
     <div class="drop-area" id="dropArea">
-        <span id="promptText">点击或拖拽 EPUB 文件至此处</span>
+        <span id="promptText">点击或拖拽 EPUB 文件</span>
         <input type="file" id="epubInput" accept=".epub">
     </div>
-
-    <div class="status" id="status">等待上传...</div>
-
-    <div class="name-setting" id="nameSetting">
-        <label>导出文件名 (.txt)</label>
-        <input type="text" id="targetFileName" placeholder="请输入文件名">
+    <div id="status">等待上传...</div>
+    <div class="btn-group">
+        <button class="btn" id="dlBtn">导出全部 TXT</button>
     </div>
-
-    <button class="btn" id="dlBtn">立即导出 TXT</button>
     <div id="log"></div>
+</div>
+
+<div id="chapterList"></div>
+
+<div class="modal" id="previewModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <strong id="modalTitle">章节预览说明</strong>
+            <button class="close-modal" id="closeModal">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
 </div>
 
 <script>
@@ -55,73 +68,89 @@
     const status = document.getElementById('status');
     const dlBtn = document.getElementById('dlBtn');
     const log = document.getElementById('log');
-    const nameSetting = document.getElementById('nameSetting');
-    const targetFileNameInput = document.getElementById('targetFileName');
+    const chapterListDiv = document.getElementById('chapterList');
     
-    let finalTxt = "";
+    // 模态框元素
+    const modal = document.getElementById('previewModal');
+    const modalBody = document.getElementById('modalBody');
+    const modalTitle = document.getElementById('modalTitle');
+    const closeModal = document.getElementById('closeModal');
+
+    let chaptersData = []; // 存储解析后的章节数据 {title, content}
 
     epubInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        reset();
-        // 预填文件名（去掉原后缀）
-        targetFileNameInput.value = file.name.replace(/\.epub$/i, '');
-        status.innerText = "正在深度解析电子书...";
+        resetUI();
+        status.innerText = "正在解析目录结构...";
         
         try {
             const zip = await JSZip.loadAsync(file);
-            addLog("ZIP 解压成功");
-
             let opfPath = "";
             zip.forEach((path) => { if (path.endsWith('.opf')) opfPath = path; });
 
-            let chapterFiles = [];
+            let chapterPaths = [];
             if (opfPath) {
                 const opfContent = await zip.file(opfPath).async("string");
-                chapterFiles = parseOpfOrder(opfContent, opfPath);
+                chapterPaths = parseOpfOrder(opfContent, opfPath);
             }
 
-            if (chapterFiles.length === 0) {
-                addLog("未找到标准索引，尝试自动排序");
-                zip.forEach((path) => {
-                    if (path.endsWith('.xhtml') || path.endsWith('.html')) chapterFiles.push(path);
-                });
-                chapterFiles.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
-            }
-
-            let resultText = "";
             const parser = new DOMParser();
-
-            for (let path of chapterFiles) {
+            
+            for (let path of chapterPaths) {
                 const fileEntry = zip.file(path);
                 if (!fileEntry) continue;
 
                 const html = await fileEntry.async("string");
                 const doc = parser.parseFromString(html, 'text/html');
                 
-                // 优化文字提取逻辑：保留段落感
-                const bodyText = Array.from(doc.querySelectorAll('p, h1, h2, h3, div'))
-                                      .map(el => el.innerText.trim())
-                                      .filter(t => t.length > 0)
-                                      .join('\n\n');
+                // 提取标题：尝试 h1, h2 或 title 标签
+                let title = doc.querySelector('h1, h2, h3')?.innerText || 
+                            doc.querySelector('title')?.innerText || 
+                            path.split('/').pop();
+                
+                // 提取正文
+                const bodyText = Array.from(doc.querySelectorAll('p, div'))
+                                    .map(el => el.innerText.trim())
+                                    .filter(t => t.length > 0)
+                                    .join('\n\n');
 
-                if (bodyText) {
-                    resultText += bodyText + "\n\n--- 章节分割线 ---\n\n";
+                if (bodyText.length > 10) { // 过滤掉只有几个字符的空白页
+                    chaptersData.push({ title: title.trim(), content: bodyText });
+                    renderChapterItem(title.trim(), chaptersData.length - 1);
                 }
-                addLog(`解析完成: ${path.split('/').pop()}`);
             }
 
-            finalTxt = resultText;
-            status.innerText = "转换成功！请确认文件名后下载。";
-            nameSetting.style.display = "block";
+            status.innerText = `解析完成，共 ${chaptersData.length} 个章节`;
             dlBtn.style.display = "block";
+            chapterListDiv.style.display = "block";
 
         } catch (err) {
-            status.innerText = "转换出错，请检查文件";
-            addLog("错误详情: " + err.message);
+            status.innerText = "解析失败";
+            console.error(err);
         }
     });
+
+    function renderChapterItem(title, index) {
+        const item = document.createElement('div');
+        item.className = 'chapter-item';
+        item.innerHTML = `
+            <div class="chapter-title">${index + 1}. ${title}</div>
+            <button class="view-btn" onclick="openPreview(${index})">查看详情</button>
+        `;
+        chapterListDiv.appendChild(item);
+    }
+
+    window.openPreview = (index) => {
+        const data = chaptersData[index];
+        modalTitle.innerText = data.title;
+        modalBody.innerText = data.content;
+        modal.style.display = 'flex';
+    };
+
+    closeModal.onclick = () => modal.style.display = 'none';
+    window.onclick = (event) => { if (event.target == modal) modal.style.display = 'none'; };
 
     function parseOpfOrder(xmlString, opfPath) {
         const parser = new DOMParser();
@@ -135,34 +164,27 @@
 
         return spine.map(ref => {
             const href = idMap[ref.getAttribute("idref")];
-            // 简单处理相对路径
-            return href ? (baseDir + href).replace(/[^\/]+\/\.\.\//g, "") : null;
+            if(!href) return null;
+            // 处理相对路径
+            let fullPath = baseDir + href;
+            return fullPath.replace(/[^\/]+\/\.\.\//g, ""); 
         }).filter(p => p !== null);
     }
 
-    function addLog(msg) {
-        log.style.display = "block";
-        const div = document.createElement('div');
-        div.innerText = "> " + msg;
-        log.appendChild(div);
-        log.scrollTop = log.scrollHeight;
-    }
-
-    function reset() {
-        finalTxt = "";
-        log.innerHTML = "";
+    function resetUI() {
+        chaptersData = [];
+        chapterListDiv.innerHTML = "";
+        chapterListDiv.style.display = "none";
         dlBtn.style.display = "none";
-        nameSetting.style.display = "none";
+        status.innerText = "";
     }
 
     dlBtn.onclick = () => {
-        let name = targetFileNameInput.value.trim() || "ebook";
-        if (!name.toLowerCase().endsWith(".txt")) name += ".txt";
-        
-        const blob = new Blob([finalTxt], { type: "text/plain;charset=utf-8" });
+        const fullTxt = chaptersData.map(c => `${c.title}\n\n${c.content}\n\n`).join('--- CHAPTER SEPARATOR ---\n\n');
+        const blob = new Blob([fullTxt], { type: "text/plain;charset=utf-8" });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = name;
+        a.download = "extracted_book.txt";
         a.click();
     };
 </script>
