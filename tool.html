@@ -2,43 +2,60 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>HTML 极简导航生成器</title>
+    <title>HTML 极简导航生成器 v2.1</title>
     <style>
-        :root { --p: #6366f1; --bg: #f8fafc; }
+        :root { --p: #6366f1; --s: #10b981; --bg: #f8fafc; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-        .card { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; width: 400px; }
+        .card { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; width: 450px; }
         .icon-box { font-size: 50px; margin-bottom: 20px; }
         h2 { margin: 0 0 10px; color: #1e293b; }
         p { color: #64748b; font-size: 14px; margin-bottom: 30px; }
-        .upload-btn { background: var(--p); color: white; padding: 12px 24px; border-radius: 12px; cursor: pointer; display: inline-block; font-weight: 600; transition: 0.2s; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; }
+        .upload-btn { background: var(--p); color: white; padding: 12px 20px; border-radius: 12px; cursor: pointer; display: inline-block; font-weight: 600; transition: 0.2s; border: none; font-size: 14px; }
         .upload-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(99, 102, 241, 0.4); }
-        #status { margin-top: 20px; font-size: 13px; color: #94a3b8; }
-        #saveBtn { margin-top: 15px; background: #10b981; display: none; }
+        #saveBtn { background: var(--s); }
+        #viewBtn { background: #f59e0b; }
+        #copyBtn { background: #64748b; }
+        .hidden { display: none !important; }
+        #status { margin-top: 20px; font-size: 13px; color: #94a3b8; min-height: 1.2em; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div class="icon-box">📂</div>
+    <div class="icon-box">🚀</div>
     <h2>导航自动生成</h2>
-    <p>选择包含 HTML 的文件夹，我将为你构建一个简约美观的索引页。</p>
+    <p>生成的链接将默认在<b>新窗口</b>打开。</p>
     
     <input type="file" id="dirInput" webkitdirectory style="display: none;">
     <label for="dirInput" class="upload-btn">选择文件夹</label>
     
-    <div id="status"></div>
-    <button id="saveBtn" class="upload-btn">保存 index.html</button>
+    <div id="status">等待选择...</div>
+
+    <div id="actions" class="btn-group hidden">
+        <button id="viewBtn" class="upload-btn">在线预览</button>
+        <button id="copyBtn" class="upload-btn">复制内容</button>
+        <button id="saveBtn" class="upload-btn">下载 index.html</button>
+    </div>
 </div>
 
 <script>
     const dirInput = document.getElementById('dirInput');
     const status = document.getElementById('status');
+    const actions = document.getElementById('actions');
     const saveBtn = document.getElementById('saveBtn');
+    const viewBtn = document.getElementById('viewBtn');
+    const copyBtn = document.getElementById('copyBtn');
     let finalHtml = '';
 
     dirInput.onchange = async (e) => {
-        const files = Array.from(e.target.files).filter(f => f.name.endsWith('.html') && f.name !== 'nav.html' && f.name !== 'tool.html');
-        if (files.length === 0) return status.innerText = "未找到 HTML 文件";
+        const files = Array.from(e.target.files).filter(f => f.name.endsWith('.html') && !['nav.html', 'tool.html', 'index.html'].includes(f.name));
+        
+        if (files.length === 0) {
+            status.innerText = "未找到 HTML 文件";
+            actions.classList.add('hidden');
+            return;
+        }
 
         status.innerText = `已解析 ${files.length} 个文件`;
         
@@ -47,12 +64,11 @@
             const text = await f.text();
             const title = text.match(/<title>(.*?)<\/title>/i)?.[1] || f.name;
             const path = f.webkitRelativePath.split('/').slice(1).join('/');
-            
-            // 简单的图标逻辑：如果是字母练习就给个书本，否则给个文件
             const icon = title.length === 1 || title.includes('字母') ? '🎨' : '📄';
 
+            // 关键改动：添加了 target="_blank"
             linksHtml += `
-            <a href="${path}" class="nav-item">
+            <a href="${path}" class="nav-item" target="_blank" rel="noopener noreferrer">
                 <span class="nav-icon">${icon}</span>
                 <div class="nav-info">
                     <span class="nav-title">${title}</span>
@@ -62,8 +78,8 @@
             </a>`;
         }
 
-        finalHtml = `
-<!DOCTYPE html>
+        // 构建最终 HTML 的代码保持不变（含样式和结构）
+        finalHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -76,31 +92,15 @@
         header { margin-bottom: 40px; text-align: center; }
         h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
         .date { font-size: 13px; color: var(--sub); margin-top: 8px; }
-        
         .nav-list { display: grid; gap: 12px; }
-        .nav-item { 
-            background: var(--card); 
-            text-decoration: none; 
-            padding: 16px; 
-            border-radius: 16px; 
-            display: flex; 
-            align-items: center; 
-            transition: all 0.2s ease;
-            border: 1px solid rgba(0,0,0,0.03);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        }
-        .nav-item:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
-            border-color: var(--accent);
-        }
+        .nav-item { background: var(--card); text-decoration: none; padding: 16px; border-radius: 16px; display: flex; align-items: center; transition: all 0.2s ease; border: 1px solid rgba(0,0,0,0.03); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .nav-item:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: var(--accent); }
         .nav-icon { font-size: 24px; margin-right: 16px; }
         .nav-info { flex: 1; display: flex; flex-direction: column; }
         .nav-title { font-weight: 600; color: var(--text); font-size: 16px; }
         .nav-path { font-size: 12px; color: var(--sub); margin-top: 2px; font-family: monospace; }
         .arrow { color: #d1d5db; font-weight: bold; transition: 0.2s; }
         .nav-item:hover .arrow { color: var(--accent); transform: translateX(4px); }
-
         @media (max-width: 480px) { body { padding: 20px 15px; } }
     </style>
 </head>
@@ -114,7 +114,8 @@
     </div>
 </body>
 </html>`;
-        saveBtn.style.display = 'inline-block';
+        
+        actions.classList.remove('hidden');
     };
 
     saveBtn.onclick = () => {
@@ -123,6 +124,23 @@
         a.href = URL.createObjectURL(blob);
         a.download = 'index.html';
         a.click();
+    };
+
+    viewBtn.onclick = () => {
+        const newWindow = window.open();
+        newWindow.document.write(finalHtml);
+        newWindow.document.close();
+    };
+
+    copyBtn.onclick = async () => {
+        try {
+            await navigator.clipboard.writeText(finalHtml);
+            const oldText = copyBtn.innerText;
+            copyBtn.innerText = '✅ 已复制！';
+            setTimeout(() => copyBtn.innerText = oldText, 2000);
+        } catch (err) {
+            alert('复制失败，请手动选择复制');
+        }
     };
 </script>
 

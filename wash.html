@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文本洗涤中心 - 纯净排版</title>
+    <style>
+        :root { --primary: #34c759; --bg: #f2f2f7; --text: #1c1c1e; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 900px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        h2 { margin-top: 0; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+        textarea { flex: 1; min-height: 400px; border: 1px solid #d2d2d7; border-radius: 12px; padding: 15px; font-size: 15px; line-height: 1.6; resize: none; outline: none; transition: border 0.2s; }
+        textarea:focus { border-color: var(--primary); }
+        
+        .toolbar { grid-column: 1 / span 2; background: white; padding: 15px; border-radius: 16px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .btn { background: #e5e5ea; color: #000; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500; transition: all 0.2s; }
+        .btn:hover { background: #d1d1d6; }
+        .btn.primary { background: var(--primary); color: white; }
+        .btn.primary:hover { opacity: 0.9; }
+        
+        .stats { font-size: 12px; color: #8e8e93; margin-top: 8px; text-align: right; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .toolbar { grid-column: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="toolbar">
+        <button class="btn primary" onclick="cleanText()">🚀 一键智能洗涤</button>
+        <button class="btn" onclick="removeSpaces()">🚫 去除所有空格</button>
+        <button class="btn" onclick="removeEmptyLines()">📭 去除空行</button>
+        <button class="btn" onclick="addPanguSpace()">↔️ 中外文加空格</button>
+        <button class="btn" onclick="toTitleCase()">大写首字母</button>
+        <button class="btn" onclick="copyResult()">📋 复制结果</button>
+        <button class="btn" style="color: #ff3b30;" onclick="clearAll()">🗑️ 清空</button>
+    </div>
+
+    <div class="card">
+        <h2>📥 输入脏文本</h2>
+        <textarea id="input" placeholder="粘贴带有乱码、多余空格或格式混乱的文字..."></textarea>
+        <div class="stats" id="inputStats">字数: 0</div>
+    </div>
+
+    <div class="card">
+        <h2>✨ 洗涤结果</h2>
+        <textarea id="output" readonly placeholder="洗干净的文字会出现在这里..."></textarea>
+        <div class="stats" id="outputStats">字数: 0</div>
+    </div>
+</div>
+
+<script>
+    const inputArea = document.getElementById('input');
+    const outputArea = document.getElementById('output');
+
+    // 监听输入更新字数
+    inputArea.oninput = () => {
+        document.getElementById('inputStats').innerText = `字数: ${inputArea.value.length}`;
+    };
+
+    // --- 洗涤函数集 ---
+
+    // 1. 智能综合洗涤
+    function cleanText() {
+        let text = inputArea.value;
+        text = text.replace(/[\r\n]+/g, '\n'); // 统一换行符
+        text = text.replace(/[ \t]+/g, ' ');    // 合并多个空格为一个
+        text = text.trim();
+        text = applyPangu(text);               // 加上中西文间距
+        processResult(text);
+    }
+
+    // 2. 去除所有空格
+    function removeSpaces() {
+        processResult(inputArea.value.replace(/\s+/g, ''));
+    }
+
+    // 3. 去除空行
+    function removeEmptyLines() {
+        processResult(inputArea.value.split('\n').filter(line => line.trim() !== '').join('\n'));
+    }
+
+    // 4. 中西文加空格 (盘古之白简易版)
+    function addPanguSpace() {
+        processResult(applyPangu(inputArea.value));
+    }
+
+    function applyPangu(text) {
+        return text
+            .replace(/([\u4e00-\u9fa5])([A-Za-z0-9])/g, '$1 $2')
+            .replace(/([A-Za-z0-9])([\u4e00-\u9fa5])/g, '$1 $2');
+    }
+
+    // 5. 英文首字母大写
+    function toTitleCase() {
+        processResult(inputArea.value.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()));
+    }
+
+    // --- 通用功能 ---
+
+    function processResult(text) {
+        outputArea.value = text;
+        document.getElementById('outputStats').innerText = `字数: ${text.length}`;
+    }
+
+    function copyResult() {
+        outputArea.select();
+        document.execCommand('copy');
+        alert('已复制到剪贴板！');
+    }
+
+    function clearAll() {
+        inputArea.value = '';
+        outputArea.value = '';
+        inputArea.oninput();
+        document.getElementById('outputStats').innerText = '字数: 0';
+    }
+</script>
+
+</body>
+</html>
