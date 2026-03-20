@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TXT 全能工作台 - 智能序号版</title>
+    <title>TXT 全能工作台 - 完整版</title>
     <style>
         :root { --primary: #1a73e8; --success: #34a853; --danger: #d93025; --bg: #f8f9fa; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -19,9 +19,11 @@
         input:disabled { background: #f0f0f0; cursor: not-allowed; color: #999; }
         .tip { font-size: 0.75rem; color: #888; margin-top: 5px; min-height: 1.2rem; }
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        button { padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; border: none; font-size: 0.9rem; }
+        button { padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; border: none; font-size: 0.9rem; transition: opacity 0.2s; }
+        button:active { opacity: 0.7; }
         .btn-main { background: var(--primary); color: white; }
         .btn-add { background: #6c757d; color: white; }
+        .btn-clear { background: #fff; color: var(--danger); border: 1px solid var(--danger) !important; grid-column: span 2; margin-top: 5px; }
         .list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; padding: 10px 5px; border-bottom: 2px solid var(--primary); position: sticky; top: 0; background: white; z-index: 10; }
         .list-title { font-size: 0.9rem; font-weight: bold; color: #444; }
         .sort-toggle { font-size: 0.75rem; color: var(--primary); cursor: pointer; }
@@ -69,6 +71,7 @@
         <div class="btn-group">
             <button class="btn-main" onclick="processFile()">开始处理</button>
             <button class="btn-add" onclick="addNewChapter()">+ 手工新增</button>
+            <button class="btn-clear" onclick="manualClear()">🗑 清空当前所有工作内容</button>
         </div>
     </div>
 
@@ -112,12 +115,29 @@
         if (chapters.length > 0) renderList();
     };
 
+    // 文件变动自动清理
     function handleFileChange() {
         if (document.getElementById('fileInput').files.length > 0) {
-            chapters = [];
-            localStorage.removeItem(STORAGE_KEY);
-            renderList();
+            clearState();
         }
+    }
+
+    // 手动清理按钮逻辑
+    function manualClear() {
+        if (chapters.length === 0) return alert("当前工作区已经是空的。");
+        if (confirm("确定要清空所有已处理的内容吗？此操作不可撤销。")) {
+            clearState();
+            // 同时重置文件上传框
+            document.getElementById('fileInput').value = "";
+            alert("已清空所有内容。");
+        }
+    }
+
+    // 通用清理状态函数
+    function clearState() {
+        chapters = [];
+        localStorage.removeItem(STORAGE_KEY);
+        renderList();
     }
 
     function switchMode(mode) {
@@ -137,7 +157,7 @@
             tip.innerText = "逻辑：遇到该符号即分割。";
         } else if (mode === 'regex') {
             label.innerText = "2. 章节正则模式";
-            input.type = "text"; input.value = "第.*章";
+            input.type = "text"; input.value = "第.*[章节回]";
             tip.innerText = "常用：第.*[章节回] 或 Chapter \\d+";
         } else if (mode === 'count') {
             label.innerText = "2. 每章目标字数";
@@ -185,6 +205,7 @@
             while ((match = regex.exec(text)) !== null) {
                 positions.push({ index: match.index, title: match[0].trim(), fullMatch: match[0] });
             }
+            if (positions.length === 0) return alert("未匹配到任何章节，请检查正则");
             chapters = positions.map((pos, i) => {
                 const start = pos.index + pos.fullMatch.length;
                 const end = positions[i + 1] ? positions[i + 1].index : text.length;
@@ -227,14 +248,14 @@
         displayList.forEach((ch) => {
             const item = document.createElement('div');
             item.className = 'chapter-item';
-            const displayTitle = ch.title === "" ? "【全文纯净整理预览】" : ch.title;
+            const displayTitle = ch.title === "" ? "【全文整理内容】" : ch.title;
             item.innerHTML = `
                 <div class="ch-info">
                     <strong>${displayTitle}</strong>
                     <small>${ch.content.length} 字</small>
                 </div>
                 <div class="ch-actions">
-                    <button class="btn-sm btn-edit" onclick="openEdit(${ch.index})">预览/修改</button>
+                    <button class="btn-sm btn-edit" onclick="openEdit(${ch.index})">预览/编辑</button>
                     <button class="btn-sm btn-del" onclick="deleteChapter(${ch.index})">删除</button>
                 </div>`;
             list.appendChild(item);
@@ -285,7 +306,7 @@
     function saveToLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(chapters)); } catch (e) { console.error("存储空间已满"); } }
     function closeModal() { document.getElementById('editModal').style.display = 'none'; }
     function openEdit(index) { currentEditIndex = index; document.getElementById('editTitle').value = chapters[index].title; document.getElementById('editArea').value = chapters[index].content; document.getElementById('editModal').style.display = 'block'; }
-    function deleteChapter(index) { if(confirm("确定删除？")) { chapters.splice(index, 1); saveToLocal(); renderList(); } }
+    function deleteChapter(index) { if(confirm("确定删除该章节？")) { chapters.splice(index, 1); saveToLocal(); renderList(); } }
     function toggleSort() { isReverse = !isReverse; document.getElementById('sortToggle').innerText = isReverse ? "⇅ 切换为正序" : "⇅ 切换为倒序"; renderList(); }
 </script>
 </body>
