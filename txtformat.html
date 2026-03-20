@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>全能 TXT 分割提取器 (支持倒序)</title>
+    <style>
+        :root { --primary: #1a73e8; --success: #34a853; --danger: #d93025; --bg: #f8f9fa; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, sans-serif; line-height: 1.5; margin: 0; padding: 10px; background: var(--bg); color: #333; }
+        .container { background: #fff; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); max-width: 700px; margin: 0 auto; }
+        
+        /* 模式切换器 */
+        .mode-switch { display: flex; background: #eee; border-radius: 8px; padding: 4px; margin-bottom: 15px; }
+        .mode-btn { flex: 1; padding: 8px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: bold; background: transparent; transition: 0.3s; }
+        .mode-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-size: 0.8rem; font-weight: bold; margin-bottom: 4px; color: #666; }
+        input[type="text"], input[type="file"], textarea { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; width: 100%; outline: none; }
+        
+        .tip { font-size: 0.75rem; color: #888; margin-top: 5px; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        button { padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; border: none; font-size: 0.9rem; }
+        .btn-main { background: var(--primary); color: white; }
+        .btn-add { background: #6c757d; color: white; }
+        .btn-export { background: var(--success); color: white; width: 100%; margin-top: 20px; }
+
+        /* 列表头部 */
+        .list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; padding: 0 5px; }
+        .list-title { font-size: 0.9rem; font-weight: bold; color: #444; }
+        .sort-toggle { font-size: 0.75rem; color: var(--primary); cursor: pointer; text-decoration: underline; }
+
+        /* 列表内容 */
+        #chapterList { margin-top: 10px; border-top: 1px solid #eee; }
+        .chapter-item { display: flex; align-items: center; padding: 12px 5px; border-bottom: 1px solid #f0f0f0; }
+        .ch-info { flex: 1; overflow: hidden; }
+        .ch-info strong { display: block; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ch-info small { color: #999; font-size: 0.75rem; }
+        .ch-actions { display: flex; gap: 8px; }
+        .btn-sm { padding: 8px 12px; font-size: 0.75rem; border-radius: 6px; cursor: pointer; border: none; }
+        .btn-edit { background: #e8f0fe; color: var(--primary); }
+        .btn-del { background: #fee8e8; color: var(--danger); }
+
+        /* 弹窗 */
+        .modal { display: none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); }
+        .modal-content { background: white; margin: 5% auto; padding: 20px; width: 92%; height: 85vh; border-radius: 16px; display: flex; flex-direction: column; }
+        textarea#editArea { flex: 1; resize: none; border: 1px solid #ddd; padding: 12px; line-height: 1.8; font-size: 16px; border-radius: 8px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h3 style="text-align:center; color:var(--primary); margin-top: 0;">全能 TXT 分割提取器</h3>
+    
+    <div class="mode-switch">
+        <button class="mode-btn active" id="mode-sym" onclick="switchMode('symbol')">特殊符号分割</button>
+        <button class="mode-btn" id="mode-reg" onclick="switchMode('regex')">智能章节匹配</button>
+    </div>
+
+    <div class="controls">
+        <div class="input-group">
+            <label>1. 选择 TXT 文件</label>
+            <input type="file" id="fileInput" accept=".txt">
+        </div>
+        
+        <div class="input-group">
+            <label id="input-label">2. 输入符号 (如 #)</label>
+            <input type="text" id="separator" placeholder="输入匹配规则">
+            <div class="tip" id="input-tip">逻辑：遇到该符号即分割。</div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-main" onclick="processFile()">开始处理</button>
+            <button class="btn-add" onclick="addNewChapter()">+ 手动新增</button>
+        </div>
+    </div>
+
+    <div class="list-header" id="listHeader" style="display:none;">
+        <span class="list-title">章节预览 (共 <span id="chCount">0</span> 章)</span>
+        <span class="sort-toggle" id="sortToggle" onclick="toggleSort()">当前：倒序排列 (新章在前)</span>
+    </div>
+    <div id="chapterList"></div>
+    
+    <div id="exportArea" style="display:none;">
+        <label style="font-size: 0.8rem; font-weight: bold; margin-top: 20px; display: block;">导出文件名</label>
+        <input type="text" id="exportName" value="整理完成.txt">
+        <button class="btn-export" onclick="exportTxt()">保存并下载 TXT</button>
+    </div>
+</div>
+
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <input type="text" id="editTitle" style="width:80%; font-weight:bold; border: 1px solid #ddd; padding: 8px; border-radius: 5px;">
+            <span style="cursor:pointer; font-size:28px;" onclick="closeModal()">&times;</span>
+        </div>
+        <textarea id="editArea"></textarea>
+        <button class="btn-main" onclick="saveEdit()">保存并关闭</button>
+    </div>
+</div>
+
+<script>
+    let chapters = []; // 原始数据始终按正序存储，保证导出逻辑正确
+    let isReverse = true; // 默认开启倒序显示
+    let currentEditIndex = -1;
+    let currentMode = 'symbol';
+
+    window.onload = () => {
+        const saved = localStorage.getItem('pro_txt_chapters_v4');
+        if (saved) {
+            chapters = JSON.parse(saved);
+            renderList();
+        }
+    };
+
+    function switchMode(mode) {
+        currentMode = mode;
+        const symBtn = document.getElementById('mode-sym');
+        const regBtn = document.getElementById('mode-reg');
+        const label = document.getElementById('input-label');
+        const input = document.getElementById('separator');
+        const tip = document.getElementById('input-tip');
+
+        if (mode === 'symbol') {
+            symBtn.classList.add('active');
+            regBtn.classList.remove('active');
+            label.innerText = "2. 输入特殊符号";
+            input.value = "#";
+            tip.innerText = "逻辑：遇到该符号即分割，符号后同一行文字作标题。";
+        } else {
+            regBtn.classList.add('active');
+            symBtn.classList.remove('active');
+            label.innerText = "2. 章节正则模式";
+            input.value = "第.*章";
+            tip.innerText = "常用：第.*[章节回] 或 Chapter \\d+";
+        }
+    }
+
+    async function processFile() {
+        const fileInput = document.getElementById('fileInput');
+        const sepValue = document.getElementById('separator').value;
+        if (!fileInput.files[0] || !sepValue) return alert("请上传文件并输入分割条件");
+
+        const text = await fileInput.files[0].text();
+        
+        if (currentMode === 'symbol') {
+            const escapedSep = sepValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const parts = text.split(new RegExp(escapedSep, 'g')).filter(p => p.trim());
+            chapters = parts.map((part, i) => {
+                const lineBreak = part.indexOf('\n');
+                let title = lineBreak === -1 ? part.trim() : part.substring(0, lineBreak).trim();
+                let content = lineBreak === -1 ? "" : part.substring(lineBreak).trim();
+                return { title: title || `第${i+1}章`, content };
+            });
+        } else {
+            const regex = new RegExp(`^.*${sepValue}.*$`, 'gm');
+            let match;
+            const positions = [];
+            while ((match = regex.exec(text)) !== null) {
+                positions.push({ index: match.index, title: match[0].trim(), fullMatch: match[0] });
+            }
+            if (positions.length === 0) return alert("正则未匹配到任何章节");
+            chapters = positions.map((pos, i) => {
+                const start = pos.index + pos.fullMatch.length;
+                const end = positions[i + 1] ? positions[i + 1].index : text.length;
+                return { title: pos.title, content: text.substring(start, end).trim() };
+            });
+        }
+        saveToLocal();
+        renderList();
+    }
+
+    // 核心修改：支持倒序渲染
+    function renderList() {
+        const list = document.getElementById('chapterList');
+        const header = document.getElementById('listHeader');
+        list.innerHTML = '';
+        
+        if (chapters.length === 0) {
+            header.style.display = 'none';
+            document.getElementById('exportArea').style.display = 'none';
+            return;
+        }
+
+        header.style.display = 'flex';
+        document.getElementById('chCount').innerText = chapters.length;
+        document.getElementById('exportArea').style.display = 'block';
+
+        // 创建一个包含索引的渲染副本，但不改变原 chapters 的顺序
+        let displayList = chapters.map((ch, index) => ({ ...ch, index }));
+        
+        if (isReverse) {
+            displayList.reverse();
+        }
+
+        displayList.forEach((ch) => {
+            const item = document.createElement('div');
+            item.className = 'chapter-item';
+            item.innerHTML = `
+                <div class="ch-info">
+                    <strong>${ch.title}</strong>
+                    <small>${ch.content.length} 字 | 原始索引: ${ch.index + 1}</small>
+                </div>
+                <div class="ch-actions">
+                    <button class="btn-sm btn-edit" onclick="openEdit(${ch.index})">编辑</button>
+                    <button class="btn-sm btn-del" onclick="deleteChapter(${ch.index})">删除</button>
+                </div>`;
+            list.appendChild(item);
+        });
+    }
+
+    function toggleSort() {
+        isReverse = !isReverse;
+        document.getElementById('sortToggle').innerText = isReverse ? "当前：倒序排列 (新章在前)" : "当前：正序排列 (旧章在前)";
+        renderList();
+    }
+
+    function openEdit(index) {
+        currentEditIndex = index;
+        document.getElementById('editTitle').value = chapters[index].title;
+        document.getElementById('editArea').value = chapters[index].content;
+        document.getElementById('editModal').style.display = 'block';
+    }
+
+    function saveEdit() {
+        const title = document.getElementById('editTitle').value.trim();
+        const content = document.getElementById('editArea').value;
+        if (currentEditIndex === -1) {
+            chapters.push({ title, content });
+        } else {
+            chapters[currentEditIndex] = { title, content };
+        }
+        saveToLocal(); renderList(); closeModal();
+    }
+
+    function addNewChapter() {
+        currentEditIndex = -1;
+        document.getElementById('editTitle').value = `第${chapters.length + 1}章`;
+        document.getElementById('editArea').value = "";
+        document.getElementById('editModal').style.display = 'block';
+    }
+
+    function deleteChapter(index) {
+        if(confirm("确定删除该章节？")) {
+            chapters.splice(index, 1);
+            saveToLocal(); renderList();
+        }
+    }
+
+    function saveToLocal() { localStorage.setItem('pro_txt_chapters_v4', JSON.stringify(chapters)); }
+    function closeModal() { document.getElementById('editModal').style.display = 'none'; }
+
+    // 导出逻辑（始终保持正序，确保阅读顺序正确）
+    function exportTxt() {
+        const name = document.getElementById('exportName').value || '整理完成.txt';
+        const formattedText = chapters.map(ch => {
+            const body = ch.content.split('\n').map(l => l.trim()).filter(l => l).map(l => '　　' + l).join('\n\n');
+            return `${ch.title}\n${body}`;
+        }).join('\n\n\n');
+        const blob = new Blob([formattedText], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+    }
+</script>
+</body>
+</html>
