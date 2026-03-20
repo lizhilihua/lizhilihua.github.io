@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EPUB 解析器 - TXT 规范导出版</title>
+    <title>EPUB 解析器 - 增强编辑版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        :root { --primary: #0071e3; --bg: #f5f5f7; --text: #1d1d1f; --border: #d2d2d7; }
+        :root { --primary: #0071e3; --bg: #f5f5f7; --text: #1d1d1f; --border: #d2d2d7; --danger: #ff3b30; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; }
         
         .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 600px; text-align: center; margin-bottom: 20px; }
@@ -18,18 +18,26 @@
         input[type="file"] { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
 
         #chapterList { width: 100%; max-width: 600px; background: white; border-radius: 15px; overflow: hidden; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 40px; }
-        .chapter-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #eee; }
-        .chapter-title { font-size: 14px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; text-align: left; }
-        .view-btn { background: #e8f2ff; color: var(--primary); border: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-left: 10px; }
+        .chapter-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #eee; transition: background 0.2s; }
+        .chapter-item:hover { background: #fafafa; }
+        .chapter-info { flex: 1; display: flex; align-items: center; overflow: hidden; }
+        .chapter-title { font-size: 14px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        .chapter-title:hover { color: var(--primary); text-decoration: underline; }
         
-        /* 预览模态框 */
+        .actions { display: flex; gap: 8px; margin-left: 10px; }
+        .btn-sm { border: none; padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: 0.2s; }
+        .view-btn { background: #e8f2ff; color: var(--primary); }
+        .edit-btn { background: #f2f2f7; color: #555; }
+        .del-btn { background: #fff1f0; color: var(--danger); }
+        .del-btn:hover { background: var(--danger); color: white; }
+
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 85%; max-width: 700px; height: 80vh; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .modal-body { flex: 1; padding: 25px; overflow-y: auto; text-align: left; line-height: 1.8; white-space: pre-wrap; font-size: 16px; color: #333; background: #fafafa; }
         .close-modal { font-size: 24px; cursor: pointer; color: #888; border: none; background: none; }
 
-        .btn { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; display: none; font-size: 16px; transition: 0.2s; }
+        .btn { background: var(--primary); color: white; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; display: none; font-size: 16px; transition: 0.2s; margin-top: 10px; }
         .btn:hover { background: #005bb7; transform: translateY(-1px); }
         #status { margin-top: 15px; font-size: 14px; color: #666; }
     </style>
@@ -38,7 +46,7 @@
 
 <div class="card">
     <h2>EPUB 提取器</h2>
-    <p class="subtitle">自动段落缩进 · 标题单行化 · 规范 TXT 导出</p>
+    <p class="subtitle">支持章节编辑、删除及规范化 TXT 导出</p>
     <div class="drop-area" id="dropArea">
         <span id="promptText">点击或拖拽 EPUB 文件到此处</span>
         <input type="file" id="epubInput" accept=".epub">
@@ -96,29 +104,24 @@
                 const html = await fileEntry.async("string");
                 const doc = parser.parseFromString(html, 'text/html');
                 
-                // 1. 提取并清洗标题：强制单行化，去除内部换行和多余空格
                 let rawTitle = doc.querySelector('h1, h2, h3')?.innerText || 
                                doc.querySelector('title')?.innerText || 
                                path.split('/').pop();
                 const cleanTitle = rawTitle.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
                 
-                // 2. 提取正文并添加全角缩进
                 const paragraphs = Array.from(doc.querySelectorAll('p, div'))
                                     .map(el => el.innerText.trim())
                                     .filter(t => t.length > 0);
 
-                // 处理段落：首行加两个全角空格
                 const bodyText = paragraphs.map(p => `　　${p}`).join('\n\n');
 
                 if (bodyText.length > 5) {
                     chaptersData.push({ title: cleanTitle, content: bodyText });
-                    renderChapterItem(cleanTitle, chaptersData.length - 1);
                 }
             }
 
-            status.innerText = `成功解析 ${chaptersData.length} 个章节`;
-            dlBtn.style.display = "block";
-            chapterListDiv.style.display = "block";
+            renderAllChapters();
+            updateStatus();
 
         } catch (err) {
             status.innerText = "解析失败: " + err.message;
@@ -126,14 +129,56 @@
         }
     });
 
-    function renderChapterItem(title, index) {
-        const item = document.createElement('div');
-        item.className = 'chapter-item';
-        item.innerHTML = `
-            <div class="chapter-title">${index + 1}. ${title}</div>
-            <button class="view-btn" onclick="openPreview(${index})">预览格式</button>
-        `;
-        chapterListDiv.appendChild(item);
+    // 渲染整个列表
+    function renderAllChapters() {
+        chapterListDiv.innerHTML = "";
+        if (chaptersData.length === 0) {
+            chapterListDiv.style.display = "none";
+            dlBtn.style.display = "none";
+            return;
+        }
+
+        chaptersData.forEach((chapter, index) => {
+            const item = document.createElement('div');
+            item.className = 'chapter-item';
+            item.innerHTML = `
+                <div class="chapter-info">
+                    <div class="chapter-title" onclick="editTitle(${index})" title="点击编辑标题">${index + 1}. ${chapter.title}</div>
+                </div>
+                <div class="actions">
+                    <button class="btn-sm view-btn" onclick="openPreview(${index})">预览</button>
+                    <button class="btn-sm edit-btn" onclick="editTitle(${index})">改名</button>
+                    <button class="btn-sm del-btn" onclick="deleteChapter(${index})">删除</button>
+                </div>
+            `;
+            chapterListDiv.appendChild(item);
+        });
+
+        chapterListDiv.style.display = "block";
+        dlBtn.style.display = "block";
+    }
+
+    // 编辑标题
+    window.editTitle = (index) => {
+        const oldTitle = chaptersData[index].title;
+        const newTitle = prompt("请输入新的章节标题：", oldTitle);
+        if (newTitle !== null && newTitle.trim() !== "") {
+            chaptersData[index].title = newTitle.trim();
+            renderAllChapters();
+        }
+    };
+
+    // 删除章节
+    window.deleteChapter = (index) => {
+        if (confirm(`确定要删除章节 "${chaptersData[index].title}" 吗？`)) {
+            chaptersData.splice(index, 1);
+            renderAllChapters();
+            updateStatus();
+        }
+    };
+
+    function updateStatus() {
+        status.innerText = chaptersData.length > 0 ? `当前共有 ${chaptersData.length} 个章节` : "列表为空";
     }
 
     window.openPreview = (index) => {
@@ -160,7 +205,6 @@
             const href = idMap[ref.getAttribute("idref")];
             if(!href) return null;
             let fullPath = baseDir + href;
-            // 简单处理相对路径中的 ../
             return fullPath.replace(/[^\/]+\/\.\.\//g, ""); 
         }).filter(p => p !== null);
     }
@@ -174,7 +218,7 @@
     }
 
     dlBtn.onclick = () => {
-        // 导出逻辑：标题单行，内容缩进，章节间空三行
+        if (chaptersData.length === 0) return;
         const fullTxt = chaptersData.map(c => `${c.title}\n\n${c.content}`).join('\n\n\n');
         
         const blob = new Blob([fullTxt], { type: "text/plain;charset=utf-8" });

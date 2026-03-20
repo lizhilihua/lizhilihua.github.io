@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EPUB 智能编辑器 v2.1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root { --primary: #007AFF; --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; }
+        body { font-family: -apple-system, system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: var(--bg); color: var(--text); overflow: hidden; }
+        
+        header { background: #fff; padding: 12px 16px; display: flex; flex-direction: column; border-bottom: 1px solid #d1d1d6; z-index: 10; gap: 10px; }
+        .header-top { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+        
+        /* 导出设置区 */
+        .export-settings { display: none; align-items: center; gap: 5px; background: #f2f2f7; padding: 8px; border-radius: 10px; }
+        .input-group { display: flex; align-items: center; flex: 1; background: #fff; border: 1px solid #d1d1d6; border-radius: 6px; padding: 0 8px; }
+        #export-filename { border: none; padding: 6px 0; font-size: 14px; flex: 1; outline: none; min-width: 0; }
+        .suffix-tag { color: #8e8e93; font-size: 14px; padding-left: 4px; font-weight: 500; }
+
+        .btn { padding: 8px 16px; border-radius: 8px; border: none; font-weight: 600; font-size: 14px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .btn-upload { background: #e5e5ea; color: #000; position: relative; overflow: hidden; }
+        .btn-upload input { position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+        .btn-save { background: var(--primary); color: #fff; }
+        .btn:disabled { opacity: 0.3; }
+
+        main { display: flex; flex: 1; overflow: hidden; }
+        @media (max-width: 768px) { main { flex-direction: column; } }
+
+        #sidebar { width: 320px; border-right: 1px solid #d1d1d6; overflow-y: auto; padding: 10px; box-sizing: border-box; }
+        @media (max-width: 768px) { #sidebar { width: 100%; height: 40%; border-right: none; border-bottom: 1px solid #d1d1d6; } }
+        
+        .section-title { font-size: 11px; font-weight: 700; color: #8e8e93; text-transform: uppercase; margin: 15px 5px 5px; }
+        .res-item { background: var(--card); padding: 10px; margin-bottom: 8px; border-radius: 10px; display: flex; align-items: center; gap: 12px; cursor: pointer; border: 2px solid transparent; }
+        .res-item.active { border-color: var(--primary); background: #f0f7ff; }
+        .res-item img { width: 45px; height: 55px; object-fit: cover; border-radius: 4px; background: #eee; }
+        .res-item-info { flex: 1; min-width: 0; }
+        .res-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .res-path { font-size: 10px; color: #8e8e93; word-break: break-all; }
+
+        #editor-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        #file-info { padding: 8px 15px; background: #f9f9f9; font-size: 12px; color: #666; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        textarea { flex: 1; border: none; padding: 15px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 16px; outline: none; resize: none; }
+        
+        #loader { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.8); display: none; align-items: center; justify-content: center; z-index: 100; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="loader">处理中...</div>
+
+<header>
+    <div class="header-top">
+        <div class="btn btn-upload">
+            导入 EPUB
+            <input type="file" id="upload-input" accept=".epub">
+        </div>
+        <button id="save-btn" class="btn btn-save" disabled>导出作品</button>
+    </div>
+    <div class="export-settings" id="export-panel">
+        <span style="font-size: 12px; color: #666;">文件名:</span>
+        <div class="input-group">
+            <input type="text" id="export-filename" placeholder="输入名称">
+            <span class="suffix-tag">.epub</span>
+        </div>
+    </div>
+</header>
+
+<main>
+    <div id="sidebar">
+        <div id="empty-hint" style="text-align: center; color: #999; margin-top: 40px; font-size: 14px;">请先导入电子书文件</div>
+        <div id="res-list"></div>
+    </div>
+    <div id="editor-area">
+        <div id="file-info">
+            <span id="current-path">未选择样式</span>
+            <span id="save-indicator" style="color: #34c759; font-weight: bold;"></span>
+        </div>
+        <textarea id="editor" spellcheck="false" placeholder="在左侧选择文件进行编辑..."></textarea>
+    </div>
+</main>
+
+<script>
+    let zip = null;
+    let opfPath = "";
+
+    function resolveInternalPath(basePath, relativePath) {
+        if (relativePath.startsWith('/')) return relativePath.substring(1);
+        const stack = basePath.split('/').slice(0, -1);
+        const parts = relativePath.split('/');
+        for (const part of parts) {
+            if (part === '..') stack.pop();
+            else if (part !== '.') stack.push(part);
+        }
+        return stack.join('/');
+    }
+
+    // 1. 导入
+    document.getElementById('upload-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        toggleLoader(true);
+        try {
+            zip = new JSZip();
+            const contents = await zip.loadAsync(file);
+            
+            const containerStr = await contents.file("META-INF/container.xml").async("string");
+            const parser = new DOMParser();
+            opfPath = parser.parseFromString(containerStr, "text/xml").querySelector("rootfile").getAttribute("full-path");
+
+            // 去掉 .epub 后缀显示在输入框
+            const pureName = file.name.replace(/\.epub$/i, "");
+            document.getElementById('export-filename').value = pureName + "_新版";
+            document.getElementById('export-panel').style.display = 'flex';
+            
+            await refreshResourceList();
+            document.getElementById('save-btn').disabled = false;
+            document.getElementById('empty-hint').style.display = 'none';
+        } catch (err) {
+            alert("无法解析该文件");
+        }
+        toggleLoader(false);
+    });
+
+    // 2. 刷新资源
+    async function refreshResourceList() {
+        const opfStr = await zip.file(opfPath).async("string");
+        const opfDoc = new DOMParser().parseFromString(opfStr, "text/xml");
+        const items = Array.from(opfDoc.querySelectorAll("item"));
+        const listDiv = document.getElementById('res-list');
+        listDiv.innerHTML = "";
+
+        const cssItems = items.filter(i => i.getAttribute("media-type") === "text/css");
+        const imgItems = items.filter(i => i.getAttribute("media-type").startsWith("image/"));
+
+        if(cssItems.length > 0) {
+            listDiv.appendChild(createLabel("样式 (CSS)"));
+            cssItems.forEach(item => {
+                const fullPath = resolveInternalPath(opfPath, item.getAttribute("href"));
+                const row = createItemUI(item.getAttribute("href"), fullPath, '🎨');
+                row.onclick = () => openEditor(fullPath, row);
+                listDiv.appendChild(row);
+            });
+        }
+
+        if(imgItems.length > 0) {
+            listDiv.appendChild(createLabel("图片 (点击替换)"));
+            for (const item of imgItems) {
+                const fullPath = resolveInternalPath(opfPath, item.getAttribute("href"));
+                const fileData = zip.file(fullPath);
+                if(!fileData) continue;
+                const base64 = await fileData.async("base64");
+                const row = createItemUI(item.getAttribute("href"), fullPath, null, `data:${item.getAttribute("media-type")};base64,${base64}`);
+                row.onclick = () => triggerReplace(fullPath);
+                listDiv.appendChild(row);
+            }
+        }
+    }
+
+    async function openEditor(path, element) {
+        const content = await zip.file(path).async("string");
+        const area = document.getElementById('editor');
+        area.value = content;
+        document.getElementById('current-path').innerText = path;
+        document.querySelectorAll('.res-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+        area.oninput = () => {
+            zip.file(path, area.value);
+            document.getElementById('save-indicator').innerText = "已同步";
+        };
+        if(window.innerWidth <= 768) document.getElementById('editor-area').scrollIntoView({behavior: "smooth"});
+    }
+
+    function triggerReplace(oldPath) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            toggleLoader(true);
+            zip.file(oldPath, await file.arrayBuffer());
+            await refreshResourceList();
+            toggleLoader(false);
+        };
+        input.click();
+    }
+
+    // 5. 导出 (核心：自动拼接 .epub)
+    document.getElementById('save-btn').onclick = async function() {
+        toggleLoader(true);
+        
+        let name = document.getElementById('export-filename').value.trim();
+        if(!name) name = "output";
+        
+        // 确保最终文件名带有 .epub
+        const finalFullName = name + ".epub";
+
+        try {
+            const blob = await zip.generateAsync({
+                type: "blob",
+                mimeType: "application/epub+zip",
+                compression: "DEFLATE"
+            });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = finalFullName;
+            a.click();
+        } catch (e) {
+            alert("导出出错");
+        }
+        toggleLoader(false);
+    };
+
+    function createLabel(txt) {
+        const d = document.createElement('div');
+        d.className = 'section-title';
+        d.innerText = txt;
+        return d;
+    }
+
+    function createItemUI(name, path, emoji, imgSrc) {
+        const div = document.createElement('div');
+        div.className = 'res-item';
+        div.innerHTML = `
+            ${imgSrc ? `<img src="${imgSrc}">` : `<div style="font-size:24px;width:45px;text-align:center">${emoji}</div>`}
+            <div class="res-item-info">
+                <div class="res-name">${name}</div>
+                <div class="res-path">${path}</div>
+            </div>
+        `;
+        return div;
+    }
+
+    function toggleLoader(show) {
+        document.getElementById('loader').style.display = show ? 'flex' : 'none';
+    }
+</script>
+</body>
+</html>
