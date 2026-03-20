@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TXT文件分割</title>
+    <title>TXT 全能工作台 - 智能序号版</title>
     <style>
         :root { --primary: #1a73e8; --success: #34a853; --danger: #d93025; --bg: #f8f9fa; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -31,7 +31,6 @@
         .ch-info small { color: #999; font-size: 0.75rem; }
         .ch-actions { display: flex; gap: 6px; }
         .btn-sm { padding: 8px 10px; font-size: 0.75rem; border-radius: 6px; cursor: pointer; border: none; }
-        .btn-copy { background: #e7f5ff; color: #007bff; }
         .btn-edit { background: #f0f0f0; color: #444; }
         .btn-del { background: #fee8e8; color: var(--danger); }
         .sticky-bottom { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 12px 20px; box-shadow: 0 -3px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 8px; max-width: 700px; margin: 0 auto; border-radius: 16px 16px 0 0; z-index: 100; }
@@ -58,7 +57,7 @@
     <div class="controls">
         <div class="input-group">
             <label>1. 选择 TXT 文件</label>
-            <input type="file" id="fileInput" accept=".txt">
+            <input type="file" id="fileInput" accept=".txt" onchange="handleFileChange()">
         </div>
         
         <div class="input-group">
@@ -94,19 +93,32 @@
 <div id="editModal" class="modal">
     <div class="modal-content">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <input type="text" id="editTitle" style="width:80%; font-weight:bold; border: 1px solid #ddd; padding: 8px; border-radius: 5px;">
+            <input type="text" id="editTitle" placeholder="章节标题" style="width:80%; font-weight:bold; border: 1px solid #ddd; padding: 8px; border-radius: 5px;">
             <span style="cursor:pointer; font-size:28px;" onclick="closeModal()">&times;</span>
         </div>
-        <textarea id="editArea"></textarea>
+        <textarea id="editArea" placeholder="章节正文内容..."></textarea>
         <button class="btn-main" onclick="saveEdit()">保存并关闭</button>
     </div>
 </div>
 
 <script>
-    let chapters = []; 
+    const STORAGE_KEY = 'pro_txt_chapters_v4';
+    let chapters = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); 
     let isReverse = true; 
     let currentEditIndex = -1;
     let currentMode = 'symbol';
+
+    window.onload = function() {
+        if (chapters.length > 0) renderList();
+    };
+
+    function handleFileChange() {
+        if (document.getElementById('fileInput').files.length > 0) {
+            chapters = [];
+            localStorage.removeItem(STORAGE_KEY);
+            renderList();
+        }
+    }
 
     function switchMode(mode) {
         currentMode = mode;
@@ -145,25 +157,17 @@
 
         try {
             const text = await fileInput.files[0].text();
-            
             if (currentMode === 'format') {
-                const cleaned = text.split('\n')
-                    .map(line => line.trim())
-                    .filter(line => line.length > 0)
-                    .map(line => '　　' + line)
-                    .join('\n\n');
-                // 特殊标记：title为空字符串表示导出时不显示标题
+                const cleaned = text.split('\n').map(line => line.trim()).filter(line => line.length > 0).map(line => '　　' + line).join('\n\n');
                 chapters = [{ title: "", content: cleaned }];
             } else {
-                // ... (此处省略 symbol/regex/count 逻辑，保持与前一版一致)
-                // 为节省篇幅，这里复用之前的逻辑分支
                 handleLegacyModes(text);
             }
-            saveToLocal(); renderList();
+            saveToLocal(); 
+            renderList();
         } catch (err) { alert("处理失败: " + err.message); }
     }
 
-    // 辅助函数：处理原有的分割逻辑
     function handleLegacyModes(text) {
         const sepValue = document.getElementById('separator').value;
         if (currentMode === 'symbol') {
@@ -173,7 +177,7 @@
                 const lineBreak = part.indexOf('\n');
                 let title = lineBreak === -1 ? part.trim() : part.substring(0, lineBreak).trim();
                 let content = lineBreak === -1 ? "" : part.substring(lineBreak).trim();
-                return { title: title || `第${i+1}章`, content };
+                return { title: title || `第${i+1}段`, content };
             });
         } else if (currentMode === 'regex') {
             const regex = new RegExp(`^.*${sepValue}.*$`, 'gm');
@@ -198,7 +202,7 @@
                 }
                 let content = text.substring(currentPos, endPos).trim();
                 if (content) {
-                    chapters.push({ title: `第${partIndex}章`, content: content });
+                    chapters.push({ title: `第${partIndex}部分`, content: content });
                     partIndex++;
                 }
                 currentPos = endPos;
@@ -210,7 +214,6 @@
         const list = document.getElementById('chapterList');
         const header = document.getElementById('listHeader');
         const exportArea = document.getElementById('exportArea');
-        if (!list) return;
         list.innerHTML = '';
         if (chapters.length === 0) {
             header.style.display = 'none'; exportArea.style.display = 'none'; return;
@@ -219,14 +222,11 @@
         document.getElementById('chCount').innerText = chapters.length;
         const totalWords = chapters.reduce((acc, curr) => acc + (curr.content ? curr.content.length : 0), 0);
         document.getElementById('statInfo').innerText = `总计 ${totalWords} 字`;
-        
         let displayList = chapters.map((ch, index) => ({ ...ch, index }));
         if (isReverse) displayList.reverse();
-        
         displayList.forEach((ch) => {
             const item = document.createElement('div');
             item.className = 'chapter-item';
-            // 如果标题为空，显示“全文正文”作为占位符
             const displayTitle = ch.title === "" ? "【全文纯净整理预览】" : ch.title;
             item.innerHTML = `
                 <div class="ch-info">
@@ -241,25 +241,52 @@
         });
     }
 
+    function addNewChapter() {
+        currentEditIndex = -1;
+        let nextTitle = "新增章节";
+        if (chapters.length > 0) {
+            const lastTitle = chapters[chapters.length - 1].title;
+            const match = lastTitle.match(/(\d+)/);
+            if (match) {
+                const lastNum = parseInt(match[1]);
+                nextTitle = lastTitle.replace(match[1], lastNum + 1);
+            } else {
+                nextTitle = `第 ${chapters.length + 1} 章`;
+            }
+        } else {
+            nextTitle = "第 1 章";
+        }
+        document.getElementById('editTitle').value = nextTitle;
+        document.getElementById('editArea').value = "";
+        document.getElementById('editModal').style.display = 'block';
+    }
+
+    function saveEdit() {
+        const title = document.getElementById('editTitle').value.trim();
+        const content = document.getElementById('editArea').value;
+        if (currentEditIndex === -1) {
+            chapters.push({ title, content });
+        } else {
+            chapters[currentEditIndex] = { title, content };
+        }
+        saveToLocal(); renderList(); closeModal();
+    }
+
     function exportTxt() {
         const name = document.getElementById('exportName').value || '整理完成.txt';
         const formattedText = chapters.map(ch => {
             const body = ch.content.split('\n').map(l => l.trim()).filter(l => l).map(l => '　　' + l).join('\n\n');
-            // 核心逻辑：如果标题为空，就不输出标题行
             return ch.title === "" ? body : `${ch.title}\n${body}`;
         }).join('\n\n\n');
-        
         const blob = new Blob([formattedText], { type: 'text/plain;charset=utf-8' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
     }
 
-    function saveToLocal() { localStorage.setItem('pro_txt_chapters_v4', JSON.stringify(chapters)); }
+    function saveToLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(chapters)); } catch (e) { console.error("存储空间已满"); } }
     function closeModal() { document.getElementById('editModal').style.display = 'none'; }
     function openEdit(index) { currentEditIndex = index; document.getElementById('editTitle').value = chapters[index].title; document.getElementById('editArea').value = chapters[index].content; document.getElementById('editModal').style.display = 'block'; }
-    function saveEdit() { const title = document.getElementById('editTitle').value.trim(); const content = document.getElementById('editArea').value; chapters[currentEditIndex] = { title, content }; saveToLocal(); renderList(); closeModal(); }
     function deleteChapter(index) { if(confirm("确定删除？")) { chapters.splice(index, 1); saveToLocal(); renderList(); } }
     function toggleSort() { isReverse = !isReverse; document.getElementById('sortToggle').innerText = isReverse ? "⇅ 切换为正序" : "⇅ 切换为倒序"; renderList(); }
-    function addNewChapter() { currentEditIndex = -1; document.getElementById('editTitle').value = `第${chapters.length + 1}章`; document.getElementById('editArea').value = ""; document.getElementById('editModal').style.display = 'block'; }
 </script>
 </body>
 </html>
