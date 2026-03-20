@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>全能 TXT 分割提取器 (支持倒序)</title>
+    <title>全能 TXT 分割提取器 (支持复制)</title>
     <style>
         :root { --primary: #1a73e8; --success: #34a853; --danger: #d93025; --bg: #f8f9fa; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -38,9 +38,10 @@
         .ch-info { flex: 1; overflow: hidden; }
         .ch-info strong { display: block; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .ch-info small { color: #999; font-size: 0.75rem; }
-        .ch-actions { display: flex; gap: 8px; }
-        .btn-sm { padding: 8px 12px; font-size: 0.75rem; border-radius: 6px; cursor: pointer; border: none; }
-        .btn-edit { background: #e8f0fe; color: var(--primary); }
+        .ch-actions { display: flex; gap: 6px; }
+        .btn-sm { padding: 8px 10px; font-size: 0.75rem; border-radius: 6px; cursor: pointer; border: none; transition: 0.2s; }
+        .btn-copy { background: #e7f5ff; color: #007bff; }
+        .btn-edit { background: #f0f0f0; color: #444; }
         .btn-del { background: #fee8e8; color: var(--danger); }
 
         /* 弹窗 */
@@ -102,8 +103,8 @@
 </div>
 
 <script>
-    let chapters = []; // 原始数据始终按正序存储，保证导出逻辑正确
-    let isReverse = true; // 默认开启倒序显示
+    let chapters = []; 
+    let isReverse = true; 
     let currentEditIndex = -1;
     let currentMode = 'symbol';
 
@@ -172,7 +173,6 @@
         renderList();
     }
 
-    // 核心修改：支持倒序渲染
     function renderList() {
         const list = document.getElementById('chapterList');
         const header = document.getElementById('listHeader');
@@ -188,12 +188,8 @@
         document.getElementById('chCount').innerText = chapters.length;
         document.getElementById('exportArea').style.display = 'block';
 
-        // 创建一个包含索引的渲染副本，但不改变原 chapters 的顺序
         let displayList = chapters.map((ch, index) => ({ ...ch, index }));
-        
-        if (isReverse) {
-            displayList.reverse();
-        }
+        if (isReverse) displayList.reverse();
 
         displayList.forEach((ch) => {
             const item = document.createElement('div');
@@ -201,14 +197,43 @@
             item.innerHTML = `
                 <div class="ch-info">
                     <strong>${ch.title}</strong>
-                    <small>${ch.content.length} 字 | 原始索引: ${ch.index + 1}</small>
+                    <small>${ch.content.length} 字 | 索引: ${ch.index + 1}</small>
                 </div>
                 <div class="ch-actions">
+                    <button class="btn-sm btn-copy" onclick="copyChapter(${ch.index}, this)">复制</button>
                     <button class="btn-sm btn-edit" onclick="openEdit(${ch.index})">编辑</button>
                     <button class="btn-sm btn-del" onclick="deleteChapter(${ch.index})">删除</button>
                 </div>`;
             list.appendChild(item);
         });
+    }
+
+    // 新增：一键复制功能
+    async function copyChapter(index, btn) {
+        const ch = chapters[index];
+        // 格式化：标题 + 正文（带缩进）
+        const formattedBody = ch.content.split('\n')
+            .map(l => l.trim())
+            .filter(l => l)
+            .map(l => '　　' + l)
+            .join('\n\n');
+        
+        const textToCopy = `${ch.title}\n\n${formattedBody}`;
+        
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            const originalText = btn.innerText;
+            btn.innerText = "已复制";
+            btn.style.background = "#34a853";
+            btn.style.color = "white";
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.style.background = "#e7f5ff";
+                btn.style.color = "#007bff";
+            }, 1200);
+        } catch (err) {
+            alert("复制失败，请检查浏览器权限");
+        }
     }
 
     function toggleSort() {
@@ -252,7 +277,6 @@
     function saveToLocal() { localStorage.setItem('pro_txt_chapters_v4', JSON.stringify(chapters)); }
     function closeModal() { document.getElementById('editModal').style.display = 'none'; }
 
-    // 导出逻辑（始终保持正序，确保阅读顺序正确）
     function exportTxt() {
         const name = document.getElementById('exportName').value || '整理完成.txt';
         const formattedText = chapters.map(ch => {
